@@ -48,6 +48,19 @@ spring:
             tencent-cls:
               url: https://mcp-api.tencent-cloud.com
               sse-endpoint: ${TENCENT_MCP_SSE_ENDPOINT}  # 从环境变量读取
+    data:
+      redis:
+        host: localhost
+        port: 6379
+        password:
+        database: 0
+        timeout: 3000
+        lettuce:
+          pool:
+            max-active: 8
+            max-idle: 8
+            min-idle: 0
+            max-wait: -1ms
 
 # 阿里云 DashScope Embedding API 配置
 dashscope:
@@ -83,3 +96,15 @@ prometheus:
 # CLS 云日志服务配置
 cls:
   mock-enabled: true  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
+
+memory:
+  short-term:
+    max-window-size: 6              # 短期记忆最大窗口大小（轮数）
+    session-ttl: 3600              # 会话过期时间（秒）
+    enable-redis: true             # 是否启用 Redis 持久化
+  long-term:
+    enable-auto-save: true         # 是否自动保存对话到长期记忆
+    save-threshold: 3              # 超过多少轮对话后自动保存
+    importance-threshold: 0.7       # 重要性评分阈值
+  compression:
+    threshold: 10                   # 超过多少轮对话后开始压缩

@@ -31,6 +31,12 @@ public class MilvusConstants {
      * 默认分片数
      */
     public static final int DEFAULT_SHARD_NUMBER = 2;
+
+    public static final String MEMORY_COLLECTION_NAME = "memory";
+    public static final String MEMORY_VECTOR_FIELD = "vector";
+    public static final String MEMORY_CONTENT_FIELD = "content";
+    public static final String MEMORY_METADATA_FIELD = "metadata";
+    public static final String MEMORY_TIMESTAMP_FIELD = "timestamp";
     
     private MilvusConstants() {
         // 工具类，禁止实例化
