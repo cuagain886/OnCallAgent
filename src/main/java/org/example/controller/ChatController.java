@@ -4,6 +4,7 @@ import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
+import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
@@ -11,6 +12,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.example.service.AiOpsService;
 import org.example.service.ChatService;
+import org.example.memory.ShortTermMemoryManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.ToolCallback;
@@ -28,7 +30,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 统一 API 控制器
@@ -48,15 +49,18 @@ public class ChatController {
 
     @Autowired
     private ToolCallbackProvider tools;
+
+    @Autowired
+    private ShortTermMemoryManager shortTermMemoryManager;
+
+    @Value("${memory.hooks.enabled:true}")
+    private boolean memoryHooksEnabled;
     
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     // 存储会话信息
     private final Map<String, SessionInfo> sessions = new ConcurrentHashMap<>();
-
-    // 最大历史消息窗口大小（成对计算：用户消息+AI回复=1对）
-    private static final int MAX_WINDOW_SIZE = 6;
 
     /**
      * 普通对话接口（支持工具调用）
@@ -76,9 +80,10 @@ public class ChatController {
 
             // 获取或创建会话
             SessionInfo session = getOrCreateSession(request.getId());
+            String sessionId = session.getSessionId();
 
-            // 获取历史消息
-            List<Map<String, String>> history = session.getHistory();
+            // 统一从 ShortTermMemoryManager 获取历史消息
+            List<Map<String, String>> history = shortTermMemoryManager.getHistory(sessionId);
             logger.info("会话历史消息对数: {}", history.size() / 2);
 
             // 创建 DashScope API 和 ChatModel
@@ -97,12 +102,15 @@ public class ChatController {
             ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
 
             // 执行对话
-            String fullAnswer = chatService.executeChat(agent, request.getQuestion());
+            String fullAnswer = chatService.executeChat(agent, request.getQuestion(), sessionId);
 
-            // 更新会话历史
-            session.addMessage(request.getQuestion(), fullAnswer);
-            logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}",
-                    request.getId(), session.getMessagePairCount());
+            // Hooks 关闭时，降级由 Controller 手动写入短期记忆
+            if (!memoryHooksEnabled) {
+                shortTermMemoryManager.addMessage(sessionId, "user", request.getQuestion());
+                shortTermMemoryManager.addMessage(sessionId, "assistant", fullAnswer);
+            }
+            int pairCount = shortTermMemoryManager.getHistory(sessionId).size() / 2;
+            logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}", sessionId, pairCount);
 
             long totalCost = System.currentTimeMillis() - startTime;
             logger.info("[Chat 接口] 总响应耗时: {}ms, SessionId: {}", totalCost, request.getId());
@@ -128,12 +136,12 @@ public class ChatController {
             }
 
             SessionInfo session = sessions.get(request.getId());
-            if (session != null) {
-                session.clearHistory();
-                return ResponseEntity.ok(ApiResponse.success("会话历史已清空"));
-            } else {
+            if (session == null) {
                 return ResponseEntity.ok(ApiResponse.error("会话不存在"));
             }
+
+            shortTermMemoryManager.clearHistory(request.getId());
+            return ResponseEntity.ok(ApiResponse.success("会话历史已清空"));
 
         } catch (Exception e) {
             logger.error("清空会话历史失败", e);
@@ -168,9 +176,10 @@ public class ChatController {
 
                 // 获取或创建会话
                 SessionInfo session = getOrCreateSession(request.getId());
+                String sessionId = session.getSessionId();
 
-                // 获取历史消息
-                List<Map<String, String>> history = session.getHistory();
+                // 统一从 ShortTermMemoryManager 获取历史消息
+                List<Map<String, String>> history = shortTermMemoryManager.getHistory(sessionId);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
 
                 // 创建 DashScope API 和 ChatModel
@@ -194,8 +203,8 @@ public class ChatController {
                 // 使用 agent.stream() 进行流式对话
 
                 String recallQuestion = chatService.buildQuestionWithForcedRecall(request.getQuestion());
-
-                Flux<NodeOutput> stream = agent.stream(recallQuestion);
+                RunnableConfig config = chatService.buildChatRunnableConfig(sessionId);
+                Flux<NodeOutput> stream = agent.stream(recallQuestion, config);
 
                 stream.subscribe(
                         output -> {
@@ -253,9 +262,13 @@ public class ChatController {
                                 long totalCost = System.currentTimeMillis() - startTime;
                                 logger.info("ReactAgent 流式对话完成 - SessionId: {}, 答案长度: {}", request.getId(), fullAnswer.length());
 
-                                // 更新会话历史
-                                session.addMessage(request.getQuestion(), fullAnswer);
-                                logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}", request.getId(), session.getMessagePairCount());
+                                // Hooks 关闭时，降级由 Controller 手动写入短期记忆
+                                if (!memoryHooksEnabled) {
+                                    shortTermMemoryManager.addMessage(sessionId, "user", request.getQuestion());
+                                    shortTermMemoryManager.addMessage(sessionId, "assistant", fullAnswer);
+                                }
+                                int pairCount = shortTermMemoryManager.getHistory(sessionId).size() / 2;
+                                logger.info("已更新会话历史 - SessionId: {}, 当前消息对数: {}", sessionId, pairCount);
 
                                 // 发送完成标记
                                 emitter.send(SseEmitter.event()
@@ -396,7 +409,7 @@ public class ChatController {
             if (session != null) {
                 SessionInfoResponse response = new SessionInfoResponse();
                 response.setSessionId(sessionId);
-                response.setMessagePairCount(session.getMessagePairCount());
+                response.setMessagePairCount(shortTermMemoryManager.getHistory(sessionId).size() / 2);
                 response.setCreateTime(session.createTime);
                 return ResponseEntity.ok(ApiResponse.success(response));
             } else {
@@ -426,92 +439,15 @@ public class ChatController {
      */
     private static class SessionInfo {
         private final String sessionId;
-        // 存储历史消息对：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
-        private final List<Map<String, String>> messageHistory;
         private final long createTime;
-        private final ReentrantLock lock;
 
         public SessionInfo(String sessionId) {
             this.sessionId = sessionId;
-            this.messageHistory = new ArrayList<>();
             this.createTime = System.currentTimeMillis();
-            this.lock = new ReentrantLock();
         }
 
-        /**
-         * 添加一对消息（用户问题 + AI回复）
-         * 自动管理历史消息窗口大小
-         */
-        public void addMessage(String userQuestion, String aiAnswer) {
-            lock.lock();
-            try {
-                // 添加用户消息
-                Map<String, String> userMsg = new HashMap<>();
-                userMsg.put("role", "user");
-                userMsg.put("content", userQuestion);
-                messageHistory.add(userMsg);
-
-                // 添加AI回复
-                Map<String, String> assistantMsg = new HashMap<>();
-                assistantMsg.put("role", "assistant");
-                assistantMsg.put("content", aiAnswer);
-                messageHistory.add(assistantMsg);
-
-                // 自动清理：保持最多 MAX_WINDOW_SIZE 对消息
-                // 每对消息包含2条记录（user + assistant）
-                int maxMessages = MAX_WINDOW_SIZE * 2;
-                while (messageHistory.size() > maxMessages) {
-                    // 成对删除最旧的消息（删除前2条）
-                    messageHistory.remove(0); // 删除最旧的用户消息
-                    if (!messageHistory.isEmpty()) {
-                        messageHistory.remove(0); // 删除对应的AI回复
-                    }
-                }
-
-                logger.debug("会话 {} 更新历史消息，当前消息对数: {}",
-                        sessionId, messageHistory.size() / 2);
-
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        /**
-         * 获取历史消息（线程安全）
-         * 返回副本以避免并发修改
-         */
-        public List<Map<String, String>> getHistory() {
-            lock.lock();
-            try {
-                return new ArrayList<>(messageHistory);
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        /**
-         * 清空历史消息
-         */
-        public void clearHistory() {
-            lock.lock();
-            try {
-                messageHistory.clear();
-                logger.info("会话 {} 历史消息已清空", sessionId);
-            } finally {
-                lock.unlock();
-            }
-        }
-
-        /**
-         * 获取当前消息对数
-         */
-        public int getMessagePairCount() {
-            lock.lock();
-            try {
-                return messageHistory.size() / 2;
-            } finally {
-                lock.unlock();
-            }
+        public String getSessionId() {
+            return sessionId;
         }
     }
 

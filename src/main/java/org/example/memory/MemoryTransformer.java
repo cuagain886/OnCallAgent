@@ -37,11 +37,16 @@ public class MemoryTransformer {
         // 压缩对话历史
         String compressed = memoryCompressor.compressHistory(history);
 
-        if (compressed != null) {
-            // 保存压缩后的内容到长期记忆
-            longTermMemoryManager.saveConversation(sessionId, history);
-            log.info("已将短期记忆转换为长期记忆: sessionId={}", sessionId);
+        if (compressed != null && !compressed.isBlank()) {
+            // 压缩成功时，优先写入压缩结果而不是原始 history
+            longTermMemoryManager.saveCompressedConversation(sessionId, compressed, history);
+            log.info("已将压缩后的短期记忆转换为长期记忆: sessionId={}", sessionId);
+            return;
         }
+
+        // 未达到压缩阈值或压缩失败时，降级保存原始会话
+        longTermMemoryManager.saveConversation(sessionId, history);
+        log.info("压缩未命中，已按原始会话写入长期记忆: sessionId={}", sessionId);
     }
 
     /**

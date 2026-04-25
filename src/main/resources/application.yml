@@ -98,6 +98,13 @@ cls:
   mock-enabled: true  # 是否启用 Mock 模式（用于测试，设为 true 返回与告警关联的模拟日志数据）
 
 memory:
+  hooks:
+    enabled: true                  # 是否启用记忆 Hooks
+    recall:
+      top-k: 3                     # 长期记忆召回条数
+      max-context-length: 1500     # 注入系统上下文的最大长度
+    persist:
+      async: true                  # 是否异步持久化记忆
   short-term:
     max-window-size: 6              # 短期记忆最大窗口大小（轮数）
     session-ttl: 3600              # 会话过期时间（秒）

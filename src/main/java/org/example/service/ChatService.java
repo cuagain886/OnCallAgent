@@ -3,8 +3,11 @@ package org.example.service;
 import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
+import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import org.example.Hooks.MemoryPersistHook;
+import org.example.Hooks.MemoryRecallHook;
 import org.example.agent.tool.DateTimeTools;
 import org.example.agent.tool.InternalDocsTools;
 import org.example.agent.tool.QueryLogsTools;
@@ -53,6 +56,15 @@ public class ChatService {
 
     @Autowired
     private ToolCallbackProvider tools;
+
+    @Autowired(required = false)
+    private MemoryRecallHook memoryRecallHook;
+
+    @Autowired(required = false)
+    private MemoryPersistHook memoryPersistHook;
+
+    @Value("${memory.hooks.enabled:true}")
+    private boolean memoryHooksEnabled;
 
     @Value("${spring.ai.dashscope.api-key}")
     private String dashScopeApiKey;
@@ -276,13 +288,21 @@ public class ChatService {
         logger.info("本地方法工具数: {}", methodTools.length);
         logger.info("MCP 工具数: {}", mcpTools.length);
         
-        ReactAgent agent = ReactAgent.builder()
+        var builder = ReactAgent.builder()
                 .name("intelligent_assistant")
                 .model(chatModel)
                 .systemPrompt(systemPrompt)
                 .methodTools(methodTools)
-                .tools(mcpTools)
-                .build();
+                .tools(mcpTools);
+
+        if (memoryHooksEnabled && memoryRecallHook != null && memoryPersistHook != null) {
+            builder.hooks(memoryRecallHook, memoryPersistHook);
+            logger.info("已启用记忆 Hooks: {}, {}", memoryRecallHook.getName(), memoryPersistHook.getName());
+        } else {
+            logger.info("记忆 Hooks 未启用或未注入，将使用默认对话流程");
+        }
+
+        ReactAgent agent = builder.build();
         
         logger.info("✓ ReactAgent 构建完成");
         return agent;
@@ -295,6 +315,17 @@ public class ChatService {
      * @return AI 回复
      */
     public String executeChat(ReactAgent agent, String question) throws GraphRunnerException {
+        return executeChat(agent, question, null);
+    }
+
+    /**
+     * 执行 ReactAgent 对话（非流式），并传入会话配置供 Hook 使用
+     * @param agent ReactAgent 实例
+     * @param question 用户问题
+     * @param sessionId 会话 ID
+     * @return AI 回复
+     */
+    public String executeChat(ReactAgent agent, String question, String sessionId) throws GraphRunnerException {
         logger.info("执行 ReactAgent.call() - 自动处理工具调用");
 
         //路由提问
@@ -302,7 +333,8 @@ public class ChatService {
 
         //强制Rag召回提问
         String RecalledQuestion = buildQuestionWithForcedRecall(question);
-        var response = agent.call(RecalledQuestion);
+        RunnableConfig config = buildChatRunnableConfig(sessionId);
+        var response = agent.call(RecalledQuestion, config);
 
         String answer = response.getText();
         logger.info("ReactAgent 对话完成，答案长度: {}", answer.length());
@@ -315,6 +347,18 @@ public class ChatService {
         }
         
         return answer;
+    }
+
+    /**
+     * 构建会话级 RunnableConfig，用于传递 sessionId 到 Hook 上下文。
+     */
+    public RunnableConfig buildChatRunnableConfig(String sessionId) {
+        RunnableConfig.Builder builder = RunnableConfig.builder();
+        if (sessionId != null && !sessionId.isBlank()) {
+            builder.threadId(sessionId);
+            builder.addMetadata("sessionId", sessionId);
+        }
+        return builder.build();
     }
 
     /**

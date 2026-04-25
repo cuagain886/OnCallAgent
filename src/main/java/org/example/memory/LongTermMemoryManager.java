@@ -54,25 +54,41 @@ public class LongTermMemoryManager {
             return;
         }
 
+        String summary = summarizeConversation(history);
+        float importance = evaluateImportance(history.toString().toLowerCase(Locale.ROOT), history.size());
+        saveMemoryContent(sessionId, summary, importance, "conversation");
+    }
+
+    /**
+     * 保存压缩后的会话摘要到长期记忆
+     */
+    public void saveCompressedConversation(String sessionId, String compressedSummary, List<Map<String, String>> history) {
+        if (!enableAutoSave || history == null || history.size() < saveThreshold * 2) {
+            return;
+        }
+        if (compressedSummary == null || compressedSummary.isBlank()) {
+            return;
+        }
+
+        float importance = evaluateImportance(compressedSummary.toLowerCase(Locale.ROOT), history.size());
+        saveMemoryContent(sessionId, compressedSummary, importance, "conversation_summary");
+    }
+
+    private void saveMemoryContent(String sessionId, String content, float importance, String type) {
+        if (importance < importanceThreshold) {
+            log.debug("对话重要性不足，不保存到长期记忆: {}", importance);
+            return;
+        }
+
         try {
-            // 评估对话重要性
-            float importance = evaluateImportance(history);
-            if (importance < importanceThreshold) {
-                log.debug("对话重要性不足，不保存到长期记忆: {}", importance);
-                return;
-            }
-
-            // 总结对话内容
-            String summary = summarizeConversation(history);
-
             // 生成向量
-            List<Float> vector = embeddingService.generateEmbedding(summary);
+            List<Float> vector = embeddingService.generateEmbedding(content);
 
             // 确保 collection 已加载
             R<RpcStatus> loadResponse = milvusClient.loadCollection(
-                LoadCollectionParam.newBuilder()
-                    .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
-                    .build()
+                    LoadCollectionParam.newBuilder()
+                            .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
+                            .build()
             );
 
             if (loadResponse.getStatus() != 0 && loadResponse.getStatus() != 65535) {
@@ -84,23 +100,23 @@ public class LongTermMemoryManager {
 
             // 构建字段数据
             List<InsertParam.Field> fields = new ArrayList<>();
-            
+
             // ID 字段
             fields.add(new InsertParam.Field("id", Collections.singletonList(id)));
-            
+
             // content 字段
-            fields.add(new InsertParam.Field("content", Collections.singletonList(summary)));
-            
+            fields.add(new InsertParam.Field("content", Collections.singletonList(content)));
+
             // vector 字段
             fields.add(new InsertParam.Field("vector", Collections.singletonList(vector)));
-            
+
             // metadata 字段（JSON 对象）
             Map<String, Object> metadata = new HashMap<>();
-            metadata.put("type", "conversation");
+            metadata.put("type", type);
             metadata.put("sessionId", sessionId);
             metadata.put("importance", importance);
             metadata.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            
+
             Gson gson = new Gson();
             JsonObject metadataJson = gson.toJsonTree(metadata).getAsJsonObject();
             fields.add(new InsertParam.Field("metadata", Collections.singletonList(metadataJson)));
@@ -115,7 +131,7 @@ public class LongTermMemoryManager {
             R<MutationResult> insertResponse = milvusClient.insert(insertParam);
 
             if (insertResponse.getStatus() == 0) {
-                log.info("对话已保存到长期记忆: sessionId={}, importance={}, id={}", sessionId, importance, id);
+                log.info("对话已保存到长期记忆: sessionId={}, type={}, importance={}, id={}", sessionId, type, importance, id);
             } else {
                 log.error("保存对话到长期记忆失败: {}", insertResponse.getMessage());
             }
@@ -139,7 +155,7 @@ public class LongTermMemoryManager {
                     .withVectors(Collections.singletonList(queryVector))
                     .withTopK(topK)
                     .withMetricType(io.milvus.param.MetricType.L2)
-                    .withOutFields(List.of("id", "content", "metadata", "timestamp"))
+                    .withOutFields(List.of("id", "content", "metadata"))
                     .build();
 
             R<SearchResults> searchResponse = milvusClient.search(searchParam);
@@ -158,8 +174,10 @@ public class LongTermMemoryManager {
                 memory.setId((String) wrapper.getIDScore(0).get(i).get("id"));
                 memory.setContent((String) wrapper.getFieldData("content", 0).get(i));
                 memory.setScore(wrapper.getIDScore(0).get(i).getScore());
-                memory.setMetadata((String) wrapper.getFieldData("metadata", 0).get(i));
-                memory.setTimestamp((String) wrapper.getFieldData("timestamp", 0).get(i));
+                Object metadataObj = wrapper.getFieldData("metadata", 0).get(i);
+                String metadata = metadataObj != null ? metadataObj.toString() : "";
+                memory.setMetadata(metadata);
+                memory.setTimestamp(extractTimestampFromMetadata(metadata));
                 memories.add(memory);
             }
 
@@ -175,15 +193,14 @@ public class LongTermMemoryManager {
     /**
      * 评估对话重要性
      */
-    private float evaluateImportance(List<Map<String, String>> history) {
+    private float evaluateImportance(String content, int historySize) {
         // 简单实现：基于对话长度和关键词
         float score = 0.0f;
 
         // 对话长度得分
-        score += Math.min(history.size() / 10.0f, 0.5f);
+        score += Math.min(historySize / 10.0f, 0.5f);
 
         // 关键词得分
-        String content = history.toString().toLowerCase();
         String[] keywords = {"问题", "解决", "错误", "故障", "优化", "建议", "重要", "注意"};
         for (String keyword : keywords) {
             if (content.contains(keyword)) {
@@ -209,6 +226,24 @@ public class LongTermMemoryManager {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * 从 metadata JSON 中提取 timestamp；解析失败时返回空字符串。
+     */
+    private String extractTimestampFromMetadata(String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return "";
+        }
+        try {
+            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
+            if (json != null && json.has("timestamp") && !json.get("timestamp").isJsonNull()) {
+                return json.get("timestamp").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("解析记忆 metadata 的 timestamp 失败: {}", e.getMessage());
+        }
+        return "";
     }
 
     /**
