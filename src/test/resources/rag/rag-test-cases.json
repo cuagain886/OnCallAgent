@@ -1,0 +1,37 @@
+[
+  {
+    "id": "cpu-001",
+    "query": "CPU使用率持续超过80%如何排查",
+    "expectedDocIds": ["cpu_high_usage", "slow_response"],
+    "topK": 3,
+    "difficulty": "easy"
+  },
+  {
+    "id": "mem-001",
+    "query": "内存持续上涨可能是什么问题",
+    "expectedDocIds": ["memory_high_usage"],
+    "topK": 3,
+    "difficulty": "easy"
+  },
+  {
+    "id": "disk-001",
+    "query": "磁盘使用率过高时要看哪些日志",
+    "expectedDocIds": ["disk_high_usage"],
+    "topK": 3,
+    "difficulty": "medium"
+  },
+  {
+    "id": "svc-001",
+    "query": "服务不可用应该先做什么检查",
+    "expectedDocIds": ["service_unavailable", "slow_response"],
+    "topK": 5,
+    "difficulty": "medium"
+  },
+  {
+    "id": "latency-001",
+    "query": "接口响应慢怎么定位根因",
+    "expectedDocIds": ["slow_response", "cpu_high_usage", "memory_high_usage"],
+    "topK": 5,
+    "difficulty": "hard"
+  }
+]
