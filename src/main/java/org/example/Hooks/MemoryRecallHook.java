@@ -67,7 +67,13 @@ public class MemoryRecallHook extends ModelHook {
                 return CompletableFuture.completedFuture(Collections.emptyMap());
             }
 
-            List<LongTermMemoryManager.Memory> memories = longTermMemoryManager.retrieveRelevantMemories(question, topK);
+            List<LongTermMemoryManager.Memory> memories =
+                    longTermMemoryManager.retrieveRelevantMemoriesBySession(question, topK, sessionId);
+
+            // 同会话未命中时兜底做通用召回，避免彻底无记忆上下文。
+            if (memories.isEmpty()) {
+                memories = longTermMemoryManager.retrieveRelevantMemories(question, topK);
+            }
             if (memories.isEmpty()) {
                 return CompletableFuture.completedFuture(Collections.emptyMap());
             }

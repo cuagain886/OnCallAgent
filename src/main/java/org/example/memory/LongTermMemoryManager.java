@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -45,6 +46,9 @@ public class LongTermMemoryManager {
 
     @Value("${memory.long-term.importance-threshold:0.7}")
     private float importanceThreshold;
+
+    @Value("${memory.long-term.content-max-length:" + MilvusConstants.CONTENT_MAX_LENGTH + "}")
+    private int contentMaxLength;
 
     /**
      * 保存对话到长期记忆
@@ -80,9 +84,15 @@ public class LongTermMemoryManager {
             return;
         }
 
+        String safeContent = normalizeForMilvusContent(content);
+        if (safeContent.isBlank()) {
+            log.warn("记忆内容为空，跳过长期记忆保存: sessionId={}, type={}", sessionId, type);
+            return;
+        }
+
         try {
             // 生成向量
-            List<Float> vector = embeddingService.generateEmbedding(content);
+            List<Float> vector = embeddingService.generateEmbedding(safeContent);
 
             // 确保 collection 已加载
             R<RpcStatus> loadResponse = milvusClient.loadCollection(
@@ -105,7 +115,7 @@ public class LongTermMemoryManager {
             fields.add(new InsertParam.Field("id", Collections.singletonList(id)));
 
             // content 字段
-            fields.add(new InsertParam.Field("content", Collections.singletonList(content)));
+            fields.add(new InsertParam.Field("content", Collections.singletonList(safeContent)));
 
             // vector 字段
             fields.add(new InsertParam.Field("vector", Collections.singletonList(vector)));
@@ -131,13 +141,60 @@ public class LongTermMemoryManager {
             R<MutationResult> insertResponse = milvusClient.insert(insertParam);
 
             if (insertResponse.getStatus() == 0) {
-                log.info("对话已保存到长期记忆: sessionId={}, type={}, importance={}, id={}", sessionId, type, importance, id);
+                log.info("对话已保存到长期记忆: sessionId={}, type={}, importance={}, id={}, contentLength={}",
+                        sessionId, type, importance, id, safeContent.length());
             } else {
                 log.error("保存对话到长期记忆失败: {}", insertResponse.getMessage());
             }
         } catch (Exception e) {
             log.error("保存对话到长期记忆异常", e);
         }
+    }
+
+    /**
+     * Milvus VarChar 字段有最大长度限制，超长时进行安全截断。
+     */
+    private String normalizeForMilvusContent(String content) {
+        if (content == null) {
+            return "";
+        }
+
+        String normalized = content.trim();
+        int maxLength = contentMaxLength;
+        byte[] bytes = normalized.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length <= maxLength) {
+            return normalized;
+        }
+
+        // Milvus 对 VarChar 长度限制在这里按 UTF-8 字节安全截断，避免中文等多字节字符导致超限。
+        String suffix = "...(truncated)";
+        int suffixBytes = suffix.getBytes(StandardCharsets.UTF_8).length;
+        int allowedBytes = Math.max(maxLength - suffixBytes, 0);
+
+        StringBuilder sb = new StringBuilder();
+        int usedBytes = 0;
+        int index = 0;
+        while (index < normalized.length()) {
+            int codePoint = normalized.codePointAt(index);
+            String cp = new String(Character.toChars(codePoint));
+            int cpBytes = cp.getBytes(StandardCharsets.UTF_8).length;
+            if (usedBytes + cpBytes > allowedBytes) {
+                break;
+            }
+            sb.append(cp);
+            usedBytes += cpBytes;
+            index += Character.charCount(codePoint);
+        }
+
+        String truncated = sb.toString();
+        if (allowedBytes > 0 && !truncated.isEmpty()) {
+            truncated = truncated + suffix;
+        }
+
+        int finalBytes = truncated.getBytes(StandardCharsets.UTF_8).length;
+        log.warn("记忆内容超过 Milvus 上限，已按字节截断: originalChars={}, originalBytes={}, finalBytes={}, maxBytes={}",
+                normalized.length(), bytes.length, finalBytes, maxLength);
+        return truncated;
     }
 
     /**
@@ -188,6 +245,40 @@ public class LongTermMemoryManager {
             log.error("检索长期记忆异常", e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * 优先召回同会话的长期记忆，避免被通用知识库内容干扰。
+     */
+    public List<Memory> retrieveRelevantMemoriesBySession(String query, int topK, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        // biz 集合中混合了文档与记忆，先放大召回再按 metadata 过滤到当前会话。
+        int widenedTopK = Math.max(topK * 10, 50);
+        List<Memory> candidates = retrieveRelevantMemories(query, widenedTopK);
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Memory> filtered = new ArrayList<>();
+        for (Memory memory : candidates) {
+            if (!isConversationMemory(memory.getMetadata())) {
+                continue;
+            }
+            String memorySessionId = extractSessionIdFromMetadata(memory.getMetadata());
+            if (sessionId.equals(memorySessionId)) {
+                filtered.add(memory);
+                if (filtered.size() >= topK) {
+                    break;
+                }
+            }
+        }
+
+        log.info("同会话长期记忆召回: sessionId={}, candidates={}, filtered={}",
+                sessionId, candidates.size(), filtered.size());
+        return filtered;
     }
 
     /**
@@ -244,6 +335,38 @@ public class LongTermMemoryManager {
             log.debug("解析记忆 metadata 的 timestamp 失败: {}", e.getMessage());
         }
         return "";
+    }
+
+    private String extractSessionIdFromMetadata(String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return "";
+        }
+        try {
+            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
+            if (json != null && json.has("sessionId") && !json.get("sessionId").isJsonNull()) {
+                return json.get("sessionId").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("解析记忆 metadata 的 sessionId 失败: {}", e.getMessage());
+        }
+        return "";
+    }
+
+    private boolean isConversationMemory(String metadata) {
+        if (metadata == null || metadata.isBlank()) {
+            return false;
+        }
+        try {
+            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
+            if (json == null || !json.has("type") || json.get("type").isJsonNull()) {
+                return false;
+            }
+            String type = json.get("type").getAsString();
+            return "conversation".equals(type) || "conversation_summary".equals(type);
+        } catch (Exception e) {
+            log.debug("解析记忆 metadata 的 type 失败: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**

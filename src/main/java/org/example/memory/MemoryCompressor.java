@@ -40,7 +40,7 @@ public class MemoryCompressor {
                             "1. 保留关键信息\n" +
                             "2. 突出用户意图\n" +
                             "3. 简明扼要\n" +
-                            "4. 200字以内",
+                            "4. 100字以内",
                     conversation
             );
 

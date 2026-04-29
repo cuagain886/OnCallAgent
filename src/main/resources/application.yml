@@ -77,9 +77,9 @@ document:
 
 # 模型配置（统一管理所有模型）
 model:
-  chat-model: "qwen-plus-0112"              # 普通对话用的模型
+  chat-model: "qwen-plus-2025-12-01"              # 普通对话用的模型
   rag-model: "qvq-max-2025-03-25"    # RAG 检索和生成用的模型
-  aiops-model: "qwen-plus-0112"             # AI Ops 告警分析用的模型
+  aiops-model: "qwen-plus-2025-12-01"             # AI Ops 告警分析用的模型
   aiops-supervisor-model: "qwen-turbo"  # 仅用于 Supervisor 路由决策（要求稳定 JSON）
   embedding-model: "text-embedding-v4"  # 向量嵌入模型
 
@@ -113,5 +113,6 @@ memory:
     enable-auto-save: true         # 是否自动保存对话到长期记忆
     save-threshold: 3              # 超过多少轮对话后自动保存
     importance-threshold: 0.7       # 重要性评分阈值
+    content-max-length: 8192        # 与 Milvus content 字段 max_length 保持一致
   compression:
     threshold: 10                   # 超过多少轮对话后开始压缩
