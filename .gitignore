@@ -69,3 +69,12 @@ manifest/config/config.local.yaml
 
 ###evals
 /rag_eval/evals/
+
+###uploads
+/uploads/
+
+# 忽略 Docker 运行时产生的所有数据
+manifest/docker/volumes/
+**/LOG
+*.wal
+*.db
