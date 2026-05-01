@@ -1,7 +1,7 @@
 package org.example.controller;
 
-import com.alibaba.cloud.ai.dashscope.api.DashScopeApi;
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.api.OpenAiApi;
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
@@ -86,9 +86,9 @@ public class ChatController {
             List<Map<String, String>> history = shortTermMemoryManager.getHistory(sessionId);
             logger.info("会话历史消息对数: {}", history.size() / 2);
 
-            // 创建 DashScope API 和 ChatModel
-            DashScopeApi dashScopeApi = chatService.createDashScopeApi();
-            DashScopeChatModel chatModel = chatService.createStandardChatModel(dashScopeApi);
+            // 创建 OpenAI API 和 ChatModel
+            OpenAiApi openAiApi = chatService.createOpenAiApi();
+            OpenAiChatModel chatModel = chatService.createStandardChatModel(openAiApi);
 
             // 记录可用工具
             chatService.logAvailableTools();
@@ -114,7 +114,8 @@ public class ChatController {
 
             long totalCost = System.currentTimeMillis() - startTime;
             logger.info("[Chat 接口] 总响应耗时: {}ms, SessionId: {}", totalCost, request.getId());
-            return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer)));
+            String ragContexts = chatService.getLastRagResult();
+            return ResponseEntity.ok(ApiResponse.success(ChatResponse.success(fullAnswer, ragContexts)));
 
         } catch (Exception e) {
             long totalCost = System.currentTimeMillis() - startTime;
@@ -182,9 +183,9 @@ public class ChatController {
                 List<Map<String, String>> history = shortTermMemoryManager.getHistory(sessionId);
                 logger.info("ReactAgent 会话历史消息对数: {}", history.size() / 2);
 
-                // 创建 DashScope API 和 ChatModel
-                DashScopeApi dashScopeApi = chatService.createDashScopeApi();
-                DashScopeChatModel chatModel = chatService.createStandardChatModel(dashScopeApi);
+                // 创建 OpenAI API 和 ChatModel
+                OpenAiApi openAiApi = chatService.createOpenAiApi();
+                OpenAiChatModel chatModel = chatService.createStandardChatModel(openAiApi);
 
                 // 记录可用工具
                 chatService.logAvailableTools();
@@ -312,8 +313,8 @@ public class ChatController {
             try {
                 logger.info("收到 AI 智能运维请求 - 启动多 Agent 协作流程");
 
-                DashScopeApi dashScopeApi = chatService.createDashScopeApi();
-                DashScopeChatModel chatModel = chatService.createChatModel(
+                OpenAiApi dashScopeApi = chatService.createOpenAiApi();
+                OpenAiChatModel chatModel = chatService.createChatModel(
                     dashScopeApi,
                     0.3,
                     8000,
@@ -501,11 +502,13 @@ public class ChatController {
         private boolean success;
         private String answer;
         private String errorMessage;
+        private String retrievedContexts;
 
-        public static ChatResponse success(String answer) {
+        public static ChatResponse success(String answer, String retrievedContexts) {
             ChatResponse response = new ChatResponse();
             response.setSuccess(true);
             response.setAnswer(answer);
+            response.setRetrievedContexts(retrievedContexts);
             return response;
         }
 

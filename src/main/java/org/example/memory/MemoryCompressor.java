@@ -1,7 +1,7 @@
 package org.example.memory;
 
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -18,17 +18,17 @@ import java.util.Map;
 public class MemoryCompressor {
 
     @Autowired
-    private DashScopeChatModel chatModel;
+    private ChatModel chatModel;
 
     @Value("${memory.compression.threshold:10}")
-    private int compressionThreshold; // 超过多少轮对话后开始压缩
+    private int compressionThreshold;
 
     /**
      * 压缩对话历史
      */
     public String compressHistory(List<Map<String, String>> history) {
         if (history.size() <= compressionThreshold * 2) {
-            return null; // 不需要压缩
+            return null;
         }
 
         try {

@@ -1,0 +1,247 @@
+{
+  "timestamp": "20260430_215614",
+  "num_samples": 26,
+  "aggregate_scores": {
+    "faithfulness": 0.7616,
+    "context_recall": 0.9038,
+    "factual_correctness(mode=f1)": 0.3332,
+    "context_precision": 0.8167,
+    "answer_relevancy": 0.4547
+  },
+  "samples": [
+    {
+      "question": "当CPU使用率持续超过80%时可能导致哪些问题?",
+      "response": "根据内部知识库的召回结果，当服务器或容器的CPU使用率持续超过80%时，可能导致以下问题：\n\n1. **应用响应变慢** - 系统资源紧张导致应用程序处理请求的速度下降\n2. **请求超时增加** - 由于处理能力不足，更多请求无法在规定时间内完成\n3. **系统负载过高** - CPU持续高负载运行，影响整体系统稳定性\n4. **可能触发雪崩效应** - 单个服务响应变慢可能连锁影响到依赖它的其",
+      "faithfulness": 0.375,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.9126
+    },
+    {
+      "question": "如何排查CPU使用率过高的问题?",
+      "response": "根据内部知识库的召回结果，以下是排查CPU使用率过高问题的方案：\n\n---\n\n### 排查方向：定时任务重叠执行\n\n如果CPU使用率具有以下特征，可能是定时任务重叠执行导致：\n\n**特征**：\n- CPU使用率周期性升高\n- 在特定时间点出现\n- 日志中有定时任务执行记录\n\n**排查与处理步骤**：\n\n1. **检查定时任务配置**\n   - 查看当前系统中所有已配置的定时任务（如 cron、调度",
+      "faithfulness": 0.4091,
+      "context_recall": 0.0,
+      "factual_correctness(mode=f1)": NaN,
+      "context_precision": 0.0,
+      "answer_relevancy": 0.9603
+    },
+    {
+      "question": "CPU过高的常见原因有哪些?",
+      "response": "根据内部知识库的召回结果，CPU过高的常见原因包括以下两种：\n\n---\n\n### 原因1: 流量突增\n\n**特征**:\n- 多个进程CPU使用率均匀升高\n- 请求量明显增加\n- 响应时间变长但无明显错误\n\n**处理方案**:\n1. 检查是否有营销活动或突发流量\n2. 启动自动扩容机制\n3. 如果是恶意流量，启用限流策略\n4. 监控扩容后的CPU使用率\n\n---\n\n### 原因2: 定时任务重叠执行",
+      "faithfulness": 0.7368,
+      "context_recall": 0.5,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": 0.0,
+      "answer_relevancy": 0.9655
+    },
+    {
+      "question": "内存使用率过高会导致什么严重后果?",
+      "response": "根据内部知识库的召回结果，当服务器或容器的内存使用率持续超过85%时，可能导致以下严重后果：\n\n1. **应用频繁GC（垃圾回收）** - 内存不足时，JVM等运行时环境会频繁触发垃圾回收，消耗大量CPU资源。\n2. **OOM（Out Of Memory）错误** - 内存耗尽时，应用会抛出内存溢出异常。\n3. **应用崩溃或重启** - 严重的内存不足可能导致进程被操作系统强制终止（OOM K",
+      "faithfulness": 0.6,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": 1.0,
+      "answer_relevancy": -0.0083
+    },
+    {
+      "question": "内存泄漏的特征是什么?",
+      "response": "根据内部知识库的召回结果，**内存泄漏**的特征如下：\n\n1. 内存使用率持续缓慢上升\n2. Full GC后内存无法释放\n3. 应用运行时间越长，内存占用越高\n4. 日志中有大量GC记录\n\n对应的处理方案为：\n1. **紧急措施**: 重启应用释放内存\n2. **获取堆转储**: 在重启前dump内存快照\n3. **分析内存泄漏**: 使用MAT工具分析堆转储文件\n4. **定位代码问题**: ",
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.62,
+      "context_precision": 1.0,
+      "answer_relevancy": -0.0026
+    },
+    {
+      "question": "如何处理内存泄漏问题?",
+      "response": "根据内部知识库的召回结果，处理内存泄漏问题的完整方案如下：\n\n---\n\n## 内存泄漏处理方案\n\n### 特征识别\n内存泄漏通常表现为以下特征：\n- 内存使用率持续缓慢上升\n- Full GC 后内存无法释放\n- 应用运行时间越长，内存占用越高\n- 日志中有大量 GC 记录\n\n### 处理步骤\n\n1. **紧急措施**：重启应用释放内存\n2. **获取堆转储**：在重启前 dump 内存快照\n3.",
+      "faithfulness": 0.9333,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.47,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.9289
+    },
+    {
+      "question": "服务不可用的最严重后果是什么?",
+      "response": "根据内部知识库的召回结果，服务不可用是最严重的故障，其最严重后果包括：\n\n1. **用户无法访问服务** - 用户完全无法使用系统功能\n2. **业务完全中断** - 所有业务流程停滞\n3. **可能造成经济损失** - 直接影响公司收入\n4. **影响公司声誉** - 损害品牌形象和用户信任",
+      "faithfulness": 0.4444,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.62,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.0625
+    },
+    {
+      "question": "应用崩溃或无法启动时的处理方案?",
+      "response": "根据内部知识库的召回结果，应用崩溃或无法启动的处理方案如下：\n\n## 特征判断\n- 所有实例都无法响应\n- 日志中有启动失败记录\n- 可能有OOM或其他致命错误\n- 健康检查全部失败\n\n## 处理方案\n\n### 1. 立即回滚\n- 如果是新版本发布后出现，立即回滚到上一个稳定版本\n- 使用蓝绿部署或金丝雀发布策略\n\n### 2. 紧急修复\n- 查看启动日志定位问题\n- 检查配置文件是否正确\n- 验",
+      "faithfulness": 0.9412,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.63,
+      "context_precision": 1.0,
+      "answer_relevancy": -0.0163
+    },
+    {
+      "question": "数据库连接失败如何解决?",
+      "response": "根据内部知识库的召回结果，数据库连接失败的处理方案如下：\n\n## 数据库连接失败处理方案\n\n### 特征识别\n- 日志中有数据库连接错误\n- 出现 \"Connection refused\" 或 \"Too many connections\" 错误\n- 数据库服务异常\n- 连接池耗尽\n\n### 处理步骤\n\n**1. 检查数据库状态**\n- 确认数据库服务是否运行\n- 检查数据库连接数\n- 查看数据库错",
+      "faithfulness": 0.85,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.0332
+    },
+    {
+      "question": "Redis连接失败会带来什么影响?",
+      "response": "根据内部知识库中《Redis连接失败告警处理方案》文档的内容，Redis连接失败可能由多种原因引起，包括：\n\n1. **Redis服务崩溃或停止** - 特征为连接立即被拒绝（refused），Redis进程不存在，所有应用都无法连接\n2. **Redis版本升级或配置变更** - 连接失败与升级/变更时间相符，新版本API有变化或某些命令不支持\n3. **网络连接问题** - 特征为连接超时（t",
+      "faithfulness": 0.4231,
+      "context_recall": 0.0,
+      "factual_correctness(mode=f1)": 0.12,
+      "context_precision": 0.0,
+      "answer_relevancy": 0.9556
+    },
+    {
+      "question": "Redis服务崩溃的特征有哪些?",
+      "response": "根据内部知识库的召回结果，Redis服务崩溃或停止的特征如下：\n\n1. **连接立即refused而不是timeout** - 客户端尝试连接时，会立即收到连接被拒绝的错误，而不是连接超时。\n2. **Redis所在服务器的CPU和内存正常** - 服务器本身的系统资源（CPU、内存）没有异常，排除了服务器资源耗尽导致的问题。\n3. **所有应用都无法连接** - 所有依赖Redis的应用都无法建",
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.62,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.7464
+    },
+    {
+      "question": "Redis内存溢出时的处理办法?",
+      "response": "根据内部知识库的召回结果，Redis内存溢出或达到上限的处理办法如下：\n\n**特征判断**：\n- Redis占用内存接近100%\n- Redis开始拒绝写入请求\n- 出现OOM kill消息\n- 连接可以建立但get/set操作失败\n\n**处理方案**：\n1. **增加内存**：增加Redis可用内存上限\n2. **清理数据**：检查是否有异常占用内存的数据\n3. **优化策略**：设置合理的过期",
+      "faithfulness": 0.9048,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.5,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.833
+    },
+    {
+      "question": "数据库连接池耗尽的后果是什么?",
+      "response": "根据内部知识库的召回结果，数据库连接池耗尽的后果包括：\n\n1. **新的数据库请求无法执行，队列积压** -- 所有连接都被占用且无法释放，新请求无法获取连接，导致请求在队列中堆积。\n2. **应用响应变慢甚至超时** -- 请求排队等待连接，响应时间显著增加，最终可能导致超时。\n3. **其他服务可能级联超时** -- 当前服务无法正常响应，可能引发依赖该服务的其他上游服务也出现超时，产生级联故",
+      "faithfulness": 0.6667,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.8,
+      "context_precision": NaN,
+      "answer_relevancy": 0.06
+    },
+    {
+      "question": "长事务或锁等待导致连接无法释放时如何处理?",
+      "response": "根据内部知识库的召回结果，针对长事务或锁等待导致连接无法释放的问题，以下是完整的处理方案：\n\n## 问题特征\n\n- 连接被长期占用但无法释放\n- 数据库中有锁等待\n- 应用日志中有SQL执行但长时间未返回\n- 活跃连接数长时间不变\n\n## 立即操作（5分钟内）\n\n1. **重启应用**: 快速恢复连接池的可用连接\n2. **确认数据库**: 检查数据库端是否有长事务，必要时kill session",
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": NaN,
+      "answer_relevancy": -0.0528
+    },
+    {
+      "question": "什么是连接泄漏?",
+      "response": "根据内部知识库的召回结果，以下是关于**连接泄漏**的定义和相关信息：\n\n**连接泄漏**是指应用程序在使用数据库连接后，未正确释放连接资源，导致连接池中的连接被逐渐耗尽的问题。\n\n**主要特征**：\n- 活跃连接数逐渐增加但不下降\n- 应用代码中获取连接后未正确释放\n- 连接被异常中断但在连接池中仍占用资源\n- 启用连接池但应用长时间运行后问题越来越严重\n\n**处理方案**：\n1. **识别泄漏",
+      "faithfulness": 0.9048,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.5,
+      "context_precision": 1.0,
+      "answer_relevancy": -0.0245
+    },
+    {
+      "question": "应用错误率升高的影响?",
+      "response": "根据内部知识库的召回结果，当应用错误率突然升高时，会导致以下影响：\n\n1. **用户请求成功率下降** - 用户的正常请求无法被正确处理\n2. **服务可用性受损** - 整体服务的可用性指标受到影响\n3. **用户体验恶化** - 用户在使用过程中遇到错误，体验变差\n4. **可能级联影响下游系统** - 错误可能传播到依赖该服务的其他系统，引发更广泛的问题",
+      "faithfulness": 0.875,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": NaN,
+      "answer_relevancy": NaN
+    },
+    {
+      "question": "代码bug导致的高错误率如何处理?",
+      "response": "根据内部知识库的召回结果，以下是针对代码bug或逻辑异常导致的高错误率的处理方案：\n\n## 特征识别\n\n首先确认是否符合以下特征：\n- 特定接口错误率升高\n- 错误堆栈中有应用自身的异常类\n- 错误与最近的代码变更有关联\n- 其他依赖系统运行正常\n\n## 处理步骤\n\n1. **立即定位问题**：根据错误堆栈信息定位代码问题所在\n2. **快速修复**：如果是明显的bug，快速发布hotfix修复\n",
+      "faithfulness": 0.875,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": NaN,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.9158
+    },
+    {
+      "question": "外部API调用失败时的处理策略?",
+      "response": "根据内部知识库的召回结果，以下是外部API调用失败时的处理策略，分为两种常见场景：\n\n---\n\n## 场景一：外部API调用失败（请求本身出错）\n\n**特征**：\n- 特定功能的请求全部失败\n- 错误信息指向外部系统\n- 外部系统的状态页显示故障\n- 与外部系统故障时间相符\n\n**处理方案**：\n1. **联系外部团队**：确认外部系统故障\n2. **使用备用方案**：如有备用服务，切换使用\n3.",
+      "faithfulness": NaN,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": NaN,
+      "context_precision": NaN,
+      "answer_relevancy": 0.097
+    },
+    {
+      "question": "消息队列堆积的后果是什么?",
+      "response": "根据内部知识库的召回结果，消息队列堆积的后果包括：\n\n1. **实时业务处理延迟**，影响用户体验\n2. **消息处理成功率下降**\n3. **队列持续增长导致存储紧张**\n4. **系统可能级联故障**",
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": NaN,
+      "answer_relevancy": NaN
+    },
+    {
+      "question": "消费者处理能力不足时如何解决?",
+      "response": "根据内部知识库的召回结果，当消费者处理能力不足时，可以按照以下方案进行解决：\n\n**特征判断**：\n- 消息生产速率大于消费速率\n- 消费者处理单条消息耗时较长\n- 消费者实例数量没有对应增加\n- 消息队列深度持续上升\n\n**处理方案**：\n\n1. **立即扩容**：增加消费者实例数量，提升整体消费能力。\n\n2. **优化处理逻辑**：检查消息处理代码，分析是否存在性能瓶颈（如不必要的循环、频繁的",
+      "faithfulness": NaN,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": NaN,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.8186
+    },
+    {
+      "question": "消息处理失败导致重试的解决方案?",
+      "response": "根据知识库召回结果，消息处理失败导致重试的解决方案如下：\n\n**原因：消息处理出错导致重试**\n\n**特征**：\n- 消息处理失败率高\n- 同一条消息重复出现在日志中\n- 失败消息被多次重试\n- 重试队列堆积\n\n**处理方案**：\n1. **分析错误原因**：查看处理失败的错误信息，定位根本原因\n2. **修复数据问题**：如果是数据格式或内容问题，修正源头数据\n3. **优化重试策略**：配置指",
+      "faithfulness": 0.8095,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.71,
+      "context_precision": NaN,
+      "answer_relevancy": NaN
+    },
+    {
+      "question": "服务响应时间过长的影响?",
+      "response": "根据内部知识库的召回结果，服务响应时间过长的影响包括：\n\n1. **用户体验下降** - 响应时间变长直接影响用户的使用体验\n2. **请求堆积** - 处理速度跟不上请求到达速度，导致请求在队列中积压\n3. **可能触发超时错误** - 超过超时阈值后，请求会被中断并返回超时错误\n4. **影响下游服务** - 作为上游服务响应变慢，会阻塞依赖该服务的下游服务调用",
+      "faithfulness": 0.625,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 1.0,
+      "context_precision": 0.3333,
+      "answer_relevancy": 0.0065
+    },
+    {
+      "question": "数据库慢查询导致响应慢如何优化?",
+      "response": "根据内部知识库的召回结果，针对数据库慢查询导致响应慢的问题，以下是完整的优化方案：\n\n---\n\n## 一、立即优化（紧急处理）\n\n1. **找出最慢的SQL语句**\n   - 通过慢查询日志定位执行时间最长的SQL\n   - 分析数据库CPU使用率高的时段对应的SQL\n\n2. **检查索引情况**\n   - 确认相关表是否缺少合适的索引\n   - 使用 EXPLAIN 查看SQL执行计划，检查是否",
+      "faithfulness": 0.5778,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.19,
+      "context_precision": 1.0,
+      "answer_relevancy": NaN
+    },
+    {
+      "question": "磁盘使用率过高会造成哪些问题?",
+      "response": "根据内部知识库的召回结果，磁盘使用率过高会导致以下问题：\n\n1. **无法写入新数据** - 磁盘空间不足时，系统无法继续写入新的文件或数据。\n2. **日志无法记录** - 应用程序和系统日志无法正常写入，导致问题排查困难。\n3. **应用崩溃** - 因无法写入必要的数据或临时文件，应用程序可能发生崩溃。\n4. **数据库损坏** - 数据库在写入过程中如果磁盘满，可能导致数据文件损坏或数据丢",
+      "faithfulness": 0.4167,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.0,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.8595
+    },
+    {
+      "question": "日志文件过大时如何处理?",
+      "response": "根据内部知识库的召回结果，日志文件过大时的处理方案如下：\n\n## 特征识别\n\n- /var/log 目录占用大量空间\n- 应用日志文件持续增长\n- 没有日志轮转或轮转失败\n- 日志级别设置为 DEBUG\n\n## 处理方案\n\n### 1. 立即清理\n\n```bash\n# 查找大日志文件\nfind /var/log -type f -size +100M\n\n# 清空日志文件（保留文件）\n> /var/",
+      "faithfulness": 0.9545,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.22,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.0039
+    },
+    {
+      "question": "临时文件堆积如何清理?",
+      "response": "根据内部知识库的召回结果，以下是关于临时文件堆积的清理方案：\n\n## 临时文件堆积的处理方案\n\n### 1. 清理临时文件\n\n使用以下命令进行清理：\n\n```bash\n# 查找大临时文件（大于100M）\nfind /tmp -type f -size +100M\n\n# 删除7天前的临时文件\nfind /tmp -type f -mtime +7 -delete\n\n# 清理应用临时目录\nrm -rf",
+      "faithfulness": 0.9565,
+      "context_recall": 1.0,
+      "factual_correctness(mode=f1)": 0.33,
+      "context_precision": 1.0,
+      "answer_relevancy": 0.9495
+    }
+  ]
+}

@@ -1,6 +1,5 @@
 package org.example.service;
 
-import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.flow.agent.SupervisorAgent;
@@ -12,6 +11,7 @@ import org.example.agent.tool.QueryMetricsTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -37,7 +37,7 @@ public class AiOpsService {
     @Autowired
     private QueryMetricsTools queryMetricsTools;
 
-    @Autowired(required = false)  // Mock 模式下才注册
+    @Autowired(required = false)
     private QueryLogsTools queryLogsTools;
 
     /**
@@ -48,14 +48,12 @@ public class AiOpsService {
      * @return 分析结果状态
      * @throws GraphRunnerException 如果 Agent 执行失败
      */
-    public Optional<OverAllState> executeAiOpsAnalysis(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) throws GraphRunnerException {
+    public Optional<OverAllState> executeAiOpsAnalysis(ChatModel chatModel, ToolCallback[] toolCallbacks) throws GraphRunnerException {
         logger.info("开始执行 AI Ops 多 Agent 协作流程");
 
-        // 构建 Planner 和 Executor Agent
         ReactAgent plannerAgent = buildPlannerAgent(chatModel, toolCallbacks);
         ReactAgent executorAgent = buildExecutorAgent(chatModel, toolCallbacks);
 
-        // 构建 Supervisor Agent
         SupervisorAgent supervisorAgent = SupervisorAgent.builder()
                 .name("ai_ops_supervisor")
                 .description("负责调度 Planner 与 Executor 的多 Agent 控制器")
@@ -72,14 +70,10 @@ public class AiOpsService {
 
     /**
      * 从执行结果中提取最终报告文本
-     *
-     * @param state 执行状态
-     * @return 报告文本（如果存在）
      */
     public Optional<String> extractFinalReport(OverAllState state) {
         logger.info("开始提取最终报告...");
 
-        // 提取 Planner 最终输出（包含完整的告警分析报告）
         Optional<AssistantMessage> plannerFinalOutput = state.value("planner_plan")
                 .filter(AssistantMessage.class::isInstance)
                 .map(AssistantMessage.class::cast);
@@ -97,7 +91,7 @@ public class AiOpsService {
     /**
      * 构建 Planner Agent
      */
-    private ReactAgent buildPlannerAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+    private ReactAgent buildPlannerAgent(ChatModel chatModel, ToolCallback[] toolCallbacks) {
         return ReactAgent.builder()
                 .name("planner_agent")
                 .description("负责拆解告警、规划与再规划步骤")
@@ -112,7 +106,7 @@ public class AiOpsService {
     /**
      * 构建 Executor Agent
      */
-    private ReactAgent buildExecutorAgent(DashScopeChatModel chatModel, ToolCallback[] toolCallbacks) {
+    private ReactAgent buildExecutorAgent(ChatModel chatModel, ToolCallback[] toolCallbacks) {
         return ReactAgent.builder()
                 .name("executor_agent")
                 .description("负责执行 Planner 的首个步骤并及时反馈")
@@ -126,14 +120,11 @@ public class AiOpsService {
 
     /**
      * 动态构建方法工具数组
-     * 根据 cls.mock-enabled 决定是否包含 QueryLogsTools
      */
     private Object[] buildMethodToolsArray() {
         if (queryLogsTools != null) {
-            // Mock 模式：包含 QueryLogsTools
             return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools, queryLogsTools};
         } else {
-            // 真实模式：不包含 QueryLogsTools（由 MCP 提供日志查询功能）
             return new Object[]{dateTimeTools, internalDocsTools, queryMetricsTools};
         }
     }
@@ -149,89 +140,89 @@ public class AiOpsService {
                 3. 在执行阶段，输出 JSON，包含 decision (PLAN|EXECUTE|FINISH)、step 描述、预期要调用的工具、以及必要的上下文。
                 4. 调用任何腾讯云日志/主题相关工具时，region 参数必须使用连字符格式（如 ap-guangzhou），若不确定请省略以使用默认值。
                 5. 严格禁止编造数据，只能引用工具返回的真实内容；如果连续 3 次调用同一工具仍失败或返回空结果，需停止该方向并在最终报告的结论部分说明"无法完成"的原因。
-                
+
                 ## 最终报告输出要求（CRITICAL）
-                
+
                 当 decision=FINISH 时，你必须：
                 1. **不要输出 JSON 格式**
                 2. **直接输出完整的 Markdown 格式报告文本**
                 3. **报告必须严格遵循以下模板**：
-                
+
                 ```
                 # 告警分析报告
-                
+
                 ---
-                
+
                 ##  活跃告警清单
-                
+
                 | 告警名称 | 级别 | 目标服务 | 首次触发时间 | 最新触发时间 | 状态 |
                 |---------|------|----------|-------------|-------------|------|
                 | [告警1名称] | [级别] | [服务名] | [时间] | [时间] | 活跃 |
                 | [告警2名称] | [级别] | [服务名] | [时间] | [时间] | 活跃 |
-                
+
                 ---
-                
+
                 ##  告警根因分析1 - [告警名称]
-                
+
                 ### 告警详情
                 - **告警级别**: [级别]
                 - **受影响服务**: [服务名]
                 - **持续时间**: [X分钟]
-                
+
                 ### 症状描述
                 [根据监控指标描述症状]
-                
+
                 ### 日志证据
                 [引用查询到的关键日志]
-                
+
                 ### 根因结论
                 [基于证据得出的根本原因]
-                
+
                 ---
-                
+
                 ##  处理方案执行1 - [告警名称]
-                
+
                 ### 已执行的排查步骤
                 1. [步骤1]
                 2. [步骤2]
-                
+
                 ### 处理建议
                 [给出具体的处理建议]
-                
+
                 ### 预期效果
                 [说明预期的效果]
-                
+
                 ---
-                
+
                 ##  告警根因分析2 - [告警名称]
                 [如果有第2个告警，重复上述格式]
-                
+
                 ---
-                
+
                 ##  结论
-                
+
                 ### 整体评估
                 [总结所有告警的整体情况]
-                
+
                 ### 关键发现
                 - [发现1]
                 - [发现2]
-                
+
                 ### 后续建议
                 1. [建议1]
                 2. [建议2]
-                
+
                 ### 风险评估
                 [评估当前风险等级和影响范围]
                 ```
-                
+
                 **重要提醒**：
                 - 最终输出必须是纯 Markdown 文本，不要包含 JSON 结构
                 - 不要使用 "finalReport": "..." 这样的格式
                 - 直接从 "# 告警分析报告" 开始输出
                 - 所有内容必须基于工具查询的真实数据，严禁编造
                 - 如果某个步骤失败，在结论中如实说明，不要跳过
-                
+
                 """;
     }
 
@@ -267,7 +258,7 @@ public class AiOpsService {
                 2. 当 planner_agent 输出 decision=EXECUTE 时，调用 executor_agent 执行第一步。
                 3. 根据 executor_agent 的反馈，评估是否需要再次调用 planner_agent，直到 decision=FINISH。
                 4. FINISH 后，确保向最终用户输出完整的《告警分析报告》，格式必须严格为：
-                   告警分析报告\n---\n# 告警处理详情\n## 活跃告警清单\n## 告警根因分析N\n## 处理方案执行N\n## 结论。
+                   告警分析报告\\n---\\n# 告警处理详情\\n## 活跃告警清单\\n## 告警根因分析N\\n## 处理方案执行N\\n## 结论。
                 5. 若步骤涉及腾讯云日志/主题工具，请确保使用连字符区域 ID（ap-guangzhou 等），或省略 region 以采用默认值。
                 6. 如果发现 Planner/Executor 在同一方向连续 3 次调用工具仍失败或没有数据，必须终止流程，直接输出"任务无法完成"的报告，明确告知失败原因，严禁凭空编造结果。
 

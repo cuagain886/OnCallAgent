@@ -19,20 +19,20 @@ milvus:
   database: default
   timeout: 10000
 
-# Spring AI Alibaba DashScope 配置
+# Spring AI OpenAI 配置（DeepSeek 兼容接口）
 spring:
+  jackson:
+    default-property-inclusion: non_null
   ai:
-    dashscope:
-      api-key: ${Ali-Key}  # 从环境变量读取或使用默认值
+    openai:
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com
       chat:
         options:
-          timeout: 180000  # 超时时间180秒（3分钟）
-      retry:
-        max-attempts: 3  # 最大重试次数
-        backoff:
-          initial-interval: 2000  # 初始重试间隔2秒
-          multiplier: 2  # 重试间隔倍数
-          max-interval: 10000  # 最大重试间隔10秒
+          model: deepseek-chat
+          temperature: 1
+          top-p: 0.95
+          max-tokens: 8192
     
     # Spring AI MCP 客户端配置
     # 如果使用mock数据，请注释这部分内容
@@ -77,11 +77,11 @@ document:
 
 # 模型配置（统一管理所有模型）
 model:
-  chat-model: "qwen-plus-2025-12-01"              # 普通对话用的模型
-  rag-model: "qvq-max-2025-03-25"    # RAG 检索和生成用的模型
-  aiops-model: "qwen-plus-2025-12-01"             # AI Ops 告警分析用的模型
-  aiops-supervisor-model: "qwen-turbo"  # 仅用于 Supervisor 路由决策（要求稳定 JSON）
-  embedding-model: "text-embedding-v4"  # 向量嵌入模型
+  chat-model: "deepseek-chat"              # 普通对话用的模型
+  rag-model: "deepseek-chat"    # RAG 检索和生成用的模型
+  aiops-model: "deepseek-chat"             # AI Ops 告警分析用的模型
+  aiops-supervisor-model: "deepseek-chat"  # Supervisor 路由决策
+  embedding-model: "text-embedding-v4"  # 向量嵌入模型（保持 DashScope）
 
 # RAG 配置
 rag:

@@ -66,3 +66,6 @@ manifest/config/config.local.yaml
 
 ###docs
 /docs/
+
+###evals
+/rag_eval/evals/
