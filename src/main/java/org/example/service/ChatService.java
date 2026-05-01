@@ -21,6 +21,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -64,6 +67,12 @@ public class ChatService {
     @Autowired(required = false)
     private MemoryPersistHook memoryPersistHook;
 
+    private volatile String lastRagResult;
+
+    public String getLastRagResult() {
+        return lastRagResult;
+    }
+
     @Value("${memory.hooks.enabled:true}")
     private boolean memoryHooksEnabled;
 
@@ -84,16 +93,6 @@ public class ChatService {
 
     @Value("${model.aiops-supervisor-model:minimaxai/minimax-m2.7}")
     private String aiOpsSupervisorModel;
-
-    /** 最近一次 RAG 检索的原始结果，供评估采集 */
-    private volatile String lastRagResult;
-
-    /**
-     * 获取最近一次强制召回的结果（供外部采集，如评估脚本）
-     */
-    public String getLastRagResult() {
-        return lastRagResult;
-    }
 
     /**
      * 创建 OpenAI API 实例（指向 NVIDIA 兼容接口）
@@ -365,14 +364,25 @@ public class ChatService {
         }
 
         try {
-            String ragJson = internalDocsTools.queryInternalDocs(question);
-            String compactRag = limitLength(ragJson, 4000);
-            logger.info("已执行 RAG 预检索，返回长度: {}", ragJson != null ? ragJson.length() : 0);
+            String ragJson = internalDocsTools.queryInternalDocsRaw(question);
+            this.lastRagResult = ragJson;
+            String extractedText = extractTextFromRagJson(ragJson);
+            logger.info("已执行 RAG 预检索，提取文本长度: {}", extractedText.length());
 
-            return "以下是内部知识库召回结果（JSON）：\n"
-                    + compactRag
-                    + "\n\n请优先基于上述召回结果回答；若召回为空或无关，请明确说明后再给通用排查建议。\n用户问题："
-                    + question;
+            if (extractedText.isEmpty()) {
+                return "【参考资料】\n（未检索到相关文档）\n\n"
+                        + "【要求】\n"
+                        + "- 根据你的通用知识简要回答\n"
+                        + "- 回答控制在 300 字以内\n\n"
+                        + "【用户问题】" + question;
+            }
+
+            return "【参考资料】\n" + extractedText
+                    + "\n【要求】\n"
+                    + "- 优先基于以上参考资料回答，若信息不足可补充通用排查建议\n"
+                    + "- 回答控制在 300 字以内\n"
+                    + "- 直接给出答案，不要复述问题\n\n"
+                    + "【用户问题】" + question;
         } catch (Exception e) {
             logger.warn("RAG 预检索失败，回退到普通工具路由: {}", e.getMessage());
             return routedQuestion;
@@ -434,14 +444,69 @@ public class ChatService {
     }
 
     /*
-     * 根据问题在知识库查询然后召回
+     * 根据问题在知识库查询然后召回，优化后的 prompt 构建
      */
     public String buildQuestionWithForcedRecall(String question) {
-        String ragJson = internalDocsTools.queryInternalDocs(question);
+        String ragJson = internalDocsTools.queryInternalDocsRaw(question);
         this.lastRagResult = ragJson;
-        String compact = limitLength(ragJson, 4000);
-        return "以下是内部知识库召回结果（JSON）：\n" + compact
-                + "\n\n请优先基于上述召回结果回答；若召回为空或无关，请明确说明。\n用户问题："
-                + question;
+
+        String extractedText = extractTextFromRagJson(ragJson);
+
+        if (extractedText.isEmpty()) {
+            return "【参考资料】\n（未检索到相关文档）\n\n"
+                    + "【要求】\n"
+                    + "- 根据你的通用知识简要回答\n"
+                    + "- 若无法确定，请明确说根据现有资料无法确定\n"
+                    + "- 回答控制在 300 字以内\n\n"
+                    + "【用户问题】" + question;
+        }
+
+        return "【参考资料】\n" + extractedText
+                + "\n【要求】\n"
+                + "- 基于参考资料概括回答，提炼与问题直接相关的关键信息\n"
+                + "- 回答控制在 200 字以内，只保留核心要点\n"
+                + "- 直接给出答案，不要复述问题、不要展开排查步骤、不要添加客套话\n"
+                + "- 若信息不足，明确说根据现有资料无法确定\n\n"
+                + "【用户问题】" + question;
+    }
+
+    /**
+     * 从 RAG JSON 中提取纯文本内容，去除 id/score/metadata 等元数据
+     */
+    private String extractTextFromRagJson(String ragJson) {
+        if (ragJson == null || ragJson.isBlank()) {
+            return "";
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(ragJson);
+
+            // 处理 no_results / error 状态
+            if (root.isObject() && root.has("status")) {
+                String status = root.get("status").asText();
+                if ("no_results".equals(status) || "error".equals(status)) {
+                    return "";
+                }
+            }
+
+            if (!root.isArray() || root.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < root.size(); i++) {
+                JsonNode node = root.get(i);
+                String content = node.has("content") ? node.get("content").asText("") : "";
+                if (content.isBlank()) {
+                    continue;
+                }
+                sb.append("--- 文档").append(i + 1).append(" ---\n");
+                sb.append(content.trim()).append("\n\n");
+            }
+            return sb.toString().trim();
+        } catch (Exception e) {
+            logger.warn("解析 RAG JSON 失败，回退到原始内容: {}", e.getMessage());
+            return limitLength(ragJson, 4000);
+        }
     }
 }

@@ -106,6 +106,12 @@ public class DocumentChunkService {
         String content = section.content;
         String title = section.title;
 
+        // 在内容前注入章节标题，增强向量语义匹配
+        String titlePrefix = (title != null && !title.isEmpty()) ? "【" + title + "】\n" : "";
+        if (!titlePrefix.isEmpty()) {
+            content = titlePrefix + content;
+        }
+
         // 如果章节内容小于最大尺寸，直接作为一个分片
         if (content.length() <= chunkConfig.getMaxSize()) {
             DocumentChunk chunk = new DocumentChunk(
