@@ -9,8 +9,12 @@
 ### 1. RAG 智能问答
 集成 Milvus 向量数据库和 DeepSeek 大模型，提供基于检索增强生成的智能问答能力，支持多轮对话和流式输出。
 
+![image-20260501154309183](C:\Users\84361\AppData\Roaming\Typora\typora-user-images\image-20260501154309183.png)
+
 ### 2. AIOps 智能运维
 基于 AI Agent 的自动化运维系统，采用 Planner-Executor-Replanner 架构，实现告警分析、日志查询、智能诊断和报告生成。
+
+![image-20260501154318210](C:\Users\84361\AppData\Roaming\Typora\typora-user-images\image-20260501154318210.png)
 
 ## 核心特性
 
