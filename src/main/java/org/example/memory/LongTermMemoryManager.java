@@ -8,6 +8,7 @@ import io.milvus.grpc.SearchResults;
 import io.milvus.param.R;
 import io.milvus.param.RpcStatus;
 import io.milvus.param.collection.LoadCollectionParam;
+import jakarta.annotation.PostConstruct;
 import io.milvus.param.dml.InsertParam;
 import io.milvus.param.dml.SearchParam;
 import io.milvus.response.SearchResultsWrapper;
@@ -32,6 +33,8 @@ import java.util.*;
 @Service
 public class LongTermMemoryManager {
 
+    private static final Gson GSON = new Gson();
+
     @Autowired
     private MilvusServiceClient milvusClient;
 
@@ -49,6 +52,28 @@ public class LongTermMemoryManager {
 
     @Value("${memory.long-term.content-max-length:" + MilvusConstants.CONTENT_MAX_LENGTH + "}")
     private int contentMaxLength;
+
+    /**
+     * 应用启动时预加载 memory collection，避免每次保存时重复调用 loadCollection。
+     */
+    @PostConstruct
+    public void init() {
+        try {
+            R<RpcStatus> loadResponse = milvusClient.loadCollection(
+                    LoadCollectionParam.newBuilder()
+                            .withCollectionName(MilvusConstants.MEMORY_COLLECTION_NAME)
+                            .build());
+            if (loadResponse.getStatus() == 0) {
+                log.info("Memory collection '{}' loaded successfully at startup", MilvusConstants.MEMORY_COLLECTION_NAME);
+            } else if (loadResponse.getStatus() == 65535) {
+                log.info("Memory collection '{}' already loaded", MilvusConstants.MEMORY_COLLECTION_NAME);
+            } else {
+                log.warn("Failed to load memory collection at startup: {}", loadResponse.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load memory collection at startup, will retry on first use", e);
+        }
+    }
 
     /**
      * 保存对话到长期记忆
@@ -94,17 +119,6 @@ public class LongTermMemoryManager {
             // 生成向量
             List<Float> vector = embeddingService.generateEmbedding(safeContent);
 
-            // 确保 collection 已加载
-            R<RpcStatus> loadResponse = milvusClient.loadCollection(
-                    LoadCollectionParam.newBuilder()
-                            .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
-                            .build()
-            );
-
-            if (loadResponse.getStatus() != 0 && loadResponse.getStatus() != 65535) {
-                throw new RuntimeException("加载 collection 失败: " + loadResponse.getMessage());
-            }
-
             // 生成唯一 ID
             String id = generateMemoryId(sessionId);
 
@@ -113,6 +127,9 @@ public class LongTermMemoryManager {
 
             // ID 字段
             fields.add(new InsertParam.Field("id", Collections.singletonList(id)));
+
+            // session_id 字段（独立字段，支持 Milvus 原生表达式过滤）
+            fields.add(new InsertParam.Field(MilvusConstants.MEMORY_SESSION_ID_FIELD, Collections.singletonList(sessionId)));
 
             // content 字段
             fields.add(new InsertParam.Field("content", Collections.singletonList(safeContent)));
@@ -127,13 +144,12 @@ public class LongTermMemoryManager {
             metadata.put("importance", importance);
             metadata.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
-            Gson gson = new Gson();
-            JsonObject metadataJson = gson.toJsonTree(metadata).getAsJsonObject();
+            JsonObject metadataJson = GSON.toJsonTree(metadata).getAsJsonObject();
             fields.add(new InsertParam.Field("metadata", Collections.singletonList(metadataJson)));
 
-            // 构建插入参数
+            // 构建插入参数（使用独立的 memory collection）
             InsertParam insertParam = InsertParam.newBuilder()
-                    .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
+                    .withCollectionName(MilvusConstants.MEMORY_COLLECTION_NAME)
                     .withFields(fields)
                     .build();
 
@@ -205,9 +221,9 @@ public class LongTermMemoryManager {
             // 生成查询向量
             List<Float> queryVector = embeddingService.generateQueryVector(query);
 
-            // 搜索
+            // 搜索（使用独立的 memory collection）
             SearchParam searchParam = SearchParam.newBuilder()
-                    .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
+                    .withCollectionName(MilvusConstants.MEMORY_COLLECTION_NAME)
                     .withVectorFieldName("vector")
                     .withVectors(Collections.singletonList(queryVector))
                     .withTopK(topK)
@@ -249,58 +265,103 @@ public class LongTermMemoryManager {
 
     /**
      * 优先召回同会话的长期记忆，避免被通用知识库内容干扰。
+     * 使用 Milvus 原生表达式过滤（session_id 字段），无需 10 倍过采样。
      */
     public List<Memory> retrieveRelevantMemoriesBySession(String query, int topK, String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
 
-        // biz 集合中混合了文档与记忆，先放大召回再按 metadata 过滤到当前会话。
-        int widenedTopK = Math.max(topK * 10, 50);
-        List<Memory> candidates = retrieveRelevantMemories(query, widenedTopK);
-        if (candidates.isEmpty()) {
+        try {
+            List<Float> queryVector = embeddingService.generateQueryVector(query);
+
+            // 使用 Milvus 原生表达式过滤 session_id，精确召回当前会话的记忆
+            String filterExpr = MilvusConstants.MEMORY_SESSION_ID_FIELD + " == \"" + sessionId + "\"";
+
+            SearchParam searchParam = SearchParam.newBuilder()
+                    .withCollectionName(MilvusConstants.MEMORY_COLLECTION_NAME)
+                    .withVectorFieldName("vector")
+                    .withVectors(Collections.singletonList(queryVector))
+                    .withTopK(topK)
+                    .withMetricType(io.milvus.param.MetricType.L2)
+                    .withOutFields(List.of("id", "content", "metadata"))
+                    .withExpr(filterExpr)
+                    .build();
+
+            R<SearchResults> searchResponse = milvusClient.search(searchParam);
+
+            if (searchResponse.getStatus() != 0) {
+                log.error("检索同会话长期记忆失败: {}", searchResponse.getMessage());
+                return Collections.emptyList();
+            }
+
+            SearchResultsWrapper wrapper = new SearchResultsWrapper(searchResponse.getData().getResults());
+            List<Memory> memories = new ArrayList<>();
+
+            for (int i = 0; i < wrapper.getRowRecords(0).size(); i++) {
+                Memory memory = new Memory();
+                memory.setId((String) wrapper.getIDScore(0).get(i).get("id"));
+                memory.setContent((String) wrapper.getFieldData("content", 0).get(i));
+                memory.setScore(wrapper.getIDScore(0).get(i).getScore());
+                Object metadataObj = wrapper.getFieldData("metadata", 0).get(i);
+                String metadata = metadataObj != null ? metadataObj.toString() : "";
+                memory.setMetadata(metadata);
+                memory.setTimestamp(extractTimestampFromMetadata(metadata));
+                memories.add(memory);
+            }
+
+            log.info("同会话长期记忆召回: sessionId={}, results={}", sessionId, memories.size());
+            return memories;
+
+        } catch (Exception e) {
+            log.error("检索同会话长期记忆异常", e);
             return Collections.emptyList();
         }
-
-        List<Memory> filtered = new ArrayList<>();
-        for (Memory memory : candidates) {
-            if (!isConversationMemory(memory.getMetadata())) {
-                continue;
-            }
-            String memorySessionId = extractSessionIdFromMetadata(memory.getMetadata());
-            if (sessionId.equals(memorySessionId)) {
-                filtered.add(memory);
-                if (filtered.size() >= topK) {
-                    break;
-                }
-            }
-        }
-
-        log.info("同会话长期记忆召回: sessionId={}, candidates={}, filtered={}",
-                sessionId, candidates.size(), filtered.size());
-        return filtered;
     }
 
     /**
-     * 评估对话重要性
+     * 评估对话重要性。
+     * 基于对话长度、多语言关键词命中、高价值模式三个维度综合评分。
      */
     private float evaluateImportance(String content, int historySize) {
-        // 简单实现：基于对话长度和关键词
         float score = 0.0f;
 
-        // 对话长度得分
+        // 维度 1：对话长度贡献（最高 0.5 分）
         score += Math.min(historySize / 10.0f, 0.5f);
 
-        // 关键词得分
-        String[] keywords = {"问题", "解决", "错误", "故障", "优化", "建议", "重要", "注意"};
-        for (String keyword : keywords) {
-            if (content.contains(keyword)) {
+        // 维度 2：多语言关键词命中（每个 +0.1 分）
+        String lowerContent = content.toLowerCase(Locale.ROOT);
+        for (String keyword : IMPORTANCE_KEYWORDS) {
+            if (lowerContent.contains(keyword)) {
                 score += 0.1f;
+            }
+        }
+
+        // 维度 3：高价值模式额外加分（根因分析类对话价值更高）
+        for (String pattern : HIGH_VALUE_PATTERNS) {
+            if (lowerContent.contains(pattern)) {
+                score += 0.2f;
+                break;  // 只加一次
             }
         }
 
         return Math.min(score, 1.0f);
     }
+
+    // 中文 + 英文 + 技术关键词，全部小写以便大小写无关匹配
+    private static final String[] IMPORTANCE_KEYWORDS = {
+            // 中文
+            "问题", "解决", "错误", "故障", "优化", "建议", "重要", "注意",
+            // 英文
+            "issue", "fix", "error", "bug", "optimize", "important", "critical", "resolved",
+            // 技术关键词
+            "exception", "timeout", "oom", "cpu", "memory", "disk", "latency", "oom"
+    };
+
+    // 高价值对话模式：根因分析类对话对知识库价值最高
+    private static final String[] HIGH_VALUE_PATTERNS = {
+            "根因", "root cause", "rca", "根本原因"
+    };
 
     /**
      * 总结对话内容
@@ -327,7 +388,7 @@ public class LongTermMemoryManager {
             return "";
         }
         try {
-            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
+            JsonObject json = GSON.fromJson(metadata, JsonObject.class);
             if (json != null && json.has("timestamp") && !json.get("timestamp").isJsonNull()) {
                 return json.get("timestamp").getAsString();
             }
@@ -335,38 +396,6 @@ public class LongTermMemoryManager {
             log.debug("解析记忆 metadata 的 timestamp 失败: {}", e.getMessage());
         }
         return "";
-    }
-
-    private String extractSessionIdFromMetadata(String metadata) {
-        if (metadata == null || metadata.isBlank()) {
-            return "";
-        }
-        try {
-            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
-            if (json != null && json.has("sessionId") && !json.get("sessionId").isJsonNull()) {
-                return json.get("sessionId").getAsString();
-            }
-        } catch (Exception e) {
-            log.debug("解析记忆 metadata 的 sessionId 失败: {}", e.getMessage());
-        }
-        return "";
-    }
-
-    private boolean isConversationMemory(String metadata) {
-        if (metadata == null || metadata.isBlank()) {
-            return false;
-        }
-        try {
-            JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
-            if (json == null || !json.has("type") || json.get("type").isJsonNull()) {
-                return false;
-            }
-            String type = json.get("type").getAsString();
-            return "conversation".equals(type) || "conversation_summary".equals(type);
-        } catch (Exception e) {
-            log.debug("解析记忆 metadata 的 type 失败: {}", e.getMessage());
-            return false;
-        }
     }
 
     /**

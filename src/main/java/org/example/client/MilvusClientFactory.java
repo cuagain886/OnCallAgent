@@ -52,12 +52,24 @@ public class MilvusClientFactory {
                 logger.info("collection '{}' 不存在，正在创建...", MilvusConstants.MILVUS_COLLECTION_NAME);
                 createBizCollection(client);
                 logger.info("成功创建 collection '{}'", MilvusConstants.MILVUS_COLLECTION_NAME);
-                
+
                 // 创建索引
-                createIndexes(client);
-                logger.info("成功创建索引");
+                createIndexes(client, MilvusConstants.MILVUS_COLLECTION_NAME);
+                logger.info("成功为 biz collection 创建索引");
             } else {
                 logger.info("collection '{}' 已存在", MilvusConstants.MILVUS_COLLECTION_NAME);
+            }
+
+            // 3. 检查并创建 memory collection（如果不存在）
+            if (!collectionExists(client, MilvusConstants.MEMORY_COLLECTION_NAME)) {
+                logger.info("collection '{}' 不存在，正在创建...", MilvusConstants.MEMORY_COLLECTION_NAME);
+                createMemoryCollection(client);
+                logger.info("成功创建 collection '{}'", MilvusConstants.MEMORY_COLLECTION_NAME);
+
+                createIndexes(client, MilvusConstants.MEMORY_COLLECTION_NAME);
+                logger.info("成功为 memory collection 创建索引");
+            } else {
+                logger.info("collection '{}' 已存在", MilvusConstants.MEMORY_COLLECTION_NAME);
             }
 
             return client;
@@ -158,10 +170,10 @@ public class MilvusClientFactory {
     /**
      * 为 collection 创建索引
      */
-    private void createIndexes(MilvusServiceClient client) {
+    private void createIndexes(MilvusServiceClient client, String collectionName) {
         // 为 vector 字段创建索引（FloatVector 使用 IVF_FLAT 和 L2 距离）
         CreateIndexParam vectorIndexParam = CreateIndexParam.newBuilder()
-                .withCollectionName(MilvusConstants.MILVUS_COLLECTION_NAME)
+                .withCollectionName(collectionName)
                 .withFieldName("vector")
                 .withIndexType(IndexType.IVF_FLAT)
                 .withMetricType(MetricType.L2)  // L2 距离（欧氏距离）
@@ -173,7 +185,64 @@ public class MilvusClientFactory {
         if (response.getStatus() != 0) {
             throw new RuntimeException("创建 vector 索引失败: " + response.getMessage());
         }
-        
-        logger.info("成功为 vector 字段创建索引");
+
+        logger.info("成功为 {} 的 vector 字段创建索引", collectionName);
+    }
+
+    /**
+     * 创建 memory collection（独立于 biz 集合，专门存储对话记忆）
+     * 包含 session_id 字段以支持 Milvus 原生表达式过滤，避免 10 倍过采样。
+     */
+    private void createMemoryCollection(MilvusServiceClient client) {
+        FieldType idField = FieldType.newBuilder()
+                .withName("id")
+                .withDataType(DataType.VarChar)
+                .withMaxLength(MilvusConstants.ID_MAX_LENGTH)
+                .withPrimaryKey(true)
+                .build();
+
+        FieldType sessionIdField = FieldType.newBuilder()
+                .withName(MilvusConstants.MEMORY_SESSION_ID_FIELD)
+                .withDataType(DataType.VarChar)
+                .withMaxLength(MilvusConstants.ID_MAX_LENGTH)
+                .build();
+
+        FieldType vectorField = FieldType.newBuilder()
+                .withName("vector")
+                .withDataType(DataType.FloatVector)
+                .withDimension(MilvusConstants.VECTOR_DIM)
+                .build();
+
+        FieldType contentField = FieldType.newBuilder()
+                .withName("content")
+                .withDataType(DataType.VarChar)
+                .withMaxLength(MilvusConstants.CONTENT_MAX_LENGTH)
+                .build();
+
+        FieldType metadataField = FieldType.newBuilder()
+                .withName("metadata")
+                .withDataType(DataType.JSON)
+                .build();
+
+        CollectionSchemaParam schema = CollectionSchemaParam.newBuilder()
+                .withEnableDynamicField(false)
+                .addFieldType(idField)
+                .addFieldType(sessionIdField)
+                .addFieldType(vectorField)
+                .addFieldType(contentField)
+                .addFieldType(metadataField)
+                .build();
+
+        CreateCollectionParam createParam = CreateCollectionParam.newBuilder()
+                .withCollectionName(MilvusConstants.MEMORY_COLLECTION_NAME)
+                .withDescription("Conversation memory collection with session-level isolation")
+                .withSchema(schema)
+                .withShardsNum(MilvusConstants.DEFAULT_SHARD_NUMBER)
+                .build();
+
+        R<RpcStatus> response = client.createCollection(createParam);
+        if (response.getStatus() != 0) {
+            throw new RuntimeException("创建 memory collection 失败: " + response.getMessage());
+        }
     }
 }

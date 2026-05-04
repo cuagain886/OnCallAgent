@@ -1,12 +1,13 @@
 package org.example.memory;
 
-import lombok.Data;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,15 +36,24 @@ public class ShortTermMemoryManager {
     private boolean enableRedis;
 
     private final Map<String, SessionMemory> inMemorySessions = new ConcurrentHashMap<>();
+
+    // Session 级别的外部锁，从 SessionMemory 中移出以保证 SessionMemory 可序列化
+    private final ConcurrentHashMap<String, ReentrantLock> sessionLocks = new ConcurrentHashMap<>();
     /**
      * 添加对话到短期记忆
      */
     public void addMessage(String sessionId, String role, String content) {
-        SessionMemory session = getOrCreateSession(sessionId);
-        session.addMessage(role, content);
+        ReentrantLock lock = sessionLocks.computeIfAbsent(sessionId, k -> new ReentrantLock());
+        lock.lock();
+        try {
+            SessionMemory session = getOrCreateSession(sessionId);
+            session.addMessage(role, content);
 
-        if (enableRedis && redisTemplate != null) {
-            saveToRedis(sessionId, session);
+            if (enableRedis && redisTemplate != null) {
+                saveToRedis(sessionId, session);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -51,22 +61,45 @@ public class ShortTermMemoryManager {
      * 获取会话历史
      */
     public List<Map<String, String>> getHistory(String sessionId) {
-        SessionMemory session = getSession(sessionId);
-        if (session == null) {
-            return Collections.emptyList();
+        ReentrantLock lock = sessionLocks.get(sessionId);
+        if (lock != null) {
+            lock.lock();
+            try {
+                SessionMemory session = getSession(sessionId);
+                return session == null ? Collections.emptyList() : session.getHistory();
+            } finally {
+                lock.unlock();
+            }
         }
-        return session.getHistory();
+        SessionMemory session = getSession(sessionId);
+        return session == null ? Collections.emptyList() : session.getHistory();
     }
 
     /**
      * 清空会话历史
      */
     public void clearHistory(String sessionId) {
-        SessionMemory session = getSession(sessionId);
-        if (session != null) {
-            session.clearHistory();
-            if (enableRedis && redisTemplate != null) {
-                redisTemplate.delete(getRedisKey(sessionId));
+        ReentrantLock lock = sessionLocks.get(sessionId);
+        if (lock != null) {
+            lock.lock();
+            try {
+                SessionMemory session = getSession(sessionId);
+                if (session != null) {
+                    session.clearHistory();
+                    if (enableRedis && redisTemplate != null) {
+                        redisTemplate.delete(getRedisKey(sessionId));
+                    }
+                }
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            SessionMemory session = getSession(sessionId);
+            if (session != null) {
+                session.clearHistory();
+                if (enableRedis && redisTemplate != null) {
+                    redisTemplate.delete(getRedisKey(sessionId));
+                }
             }
         }
     }
@@ -130,12 +163,15 @@ public class ShortTermMemoryManager {
 
     /**
      * 会话记忆数据类
+     * 注意：锁已移至 ShortTermMemoryManager.sessionLocks 外部管理，
+     * 保证 SessionMemory 可被 Redis 正确序列化。
      */
-    @Data
-    public static class SessionMemory {
+    @Getter
+    public static class SessionMemory implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         private final String sessionId;
         private final List<Map<String, String>> messageHistory;
-        private final ReentrantLock lock;
         private final int maxWindowSize;
         private final long createTime;
 
@@ -143,41 +179,37 @@ public class ShortTermMemoryManager {
             this.sessionId = sessionId;
             this.maxWindowSize = maxWindowSize;
             this.messageHistory = new ArrayList<>();
-            this.lock = new ReentrantLock();
             this.createTime = System.currentTimeMillis();
         }
 
+        /**
+         * 添加消息并执行滑动窗口淘汰。
+         * 调用方需保证已持有该 sessionId 的外部锁。
+         */
         public void addMessage(String role, String content) {
-            lock.lock();
-            try {
-                messageHistory.add(Map.of("role", role, "content", content));
+            messageHistory.add(Map.of("role", role, "content", content));
 
-                // 自动管理历史消息窗口大小
-                while (messageHistory.size() > maxWindowSize * 2) {
-                    messageHistory.remove(0);
-                    messageHistory.remove(0);
-                }
-            } finally {
-                lock.unlock();
+            // 自动管理历史消息窗口大小
+            while (messageHistory.size() > maxWindowSize * 2) {
+                messageHistory.remove(0);
+                messageHistory.remove(0);
             }
         }
 
+        /**
+         * 返回历史消息的防御性拷贝。
+         * 调用方需保证已持有该 sessionId 的外部锁。
+         */
         public List<Map<String, String>> getHistory() {
-            lock.lock();
-            try {
-                return new ArrayList<>(messageHistory);
-            } finally {
-                lock.unlock();
-            }
+            return new ArrayList<>(messageHistory);
         }
 
+        /**
+         * 清空历史消息。
+         * 调用方需保证已持有该 sessionId 的外部锁。
+         */
         public void clearHistory() {
-            lock.lock();
-            try {
-                messageHistory.clear();
-            } finally {
-                lock.unlock();
-            }
+            messageHistory.clear();
         }
 
         public int getMessagePairCount() {

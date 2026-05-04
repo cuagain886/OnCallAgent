@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 在模型调用后将本轮对话写入短期记忆，并按阈值沉淀到长期记忆。
@@ -39,6 +40,10 @@ public class MemoryPersistHook extends ModelHook {
 
     @Value("${memory.hooks.persist.async:true}")
     private boolean asyncPersist;
+
+    // Session 级别的串行化队列，确保同一 sessionId 的持久化操作按序执行，
+    // 避免并发请求导致 user/assistant 消息交错写入。
+    private final ConcurrentHashMap<String, CompletableFuture<Void>> sessionPersistQueues = new ConcurrentHashMap<>();
 
     @Override
     public String getName() {
@@ -66,16 +71,21 @@ public class MemoryPersistHook extends ModelHook {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
 
-        Runnable persistTask = () -> persist(sessionId, pair);
         if (asyncPersist) {
-            CompletableFuture.runAsync(persistTask)
-                    .exceptionally(ex -> {
-                        log.warn("MemoryPersistHook 异步持久化失败: {}", ex.getMessage());
-                        return null;
-                    });
+            // 使用 sessionId 级别的串行队列，保证同一会话的 user+assistant 写入顺序一致
+            sessionPersistQueues.compute(sessionId, (key, prev) -> {
+                CompletableFuture<Void> chain = (prev == null)
+                        ? CompletableFuture.completedFuture(null)
+                        : prev;
+                return chain.thenRunAsync(() -> persist(sessionId, pair))
+                        .exceptionally(ex -> {
+                            log.warn("MemoryPersistHook 异步持久化失败: sessionId={}, error={}", sessionId, ex.getMessage());
+                            return null;
+                        });
+            });
         } else {
             try {
-                persistTask.run();
+                persist(sessionId, pair);
             } catch (Exception e) {
                 log.warn("MemoryPersistHook 同步持久化失败: {}", e.getMessage());
             }

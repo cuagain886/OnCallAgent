@@ -70,9 +70,9 @@ public class MemoryRecallHook extends ModelHook {
             List<LongTermMemoryManager.Memory> memories =
                     longTermMemoryManager.retrieveRelevantMemoriesBySession(question, topK, sessionId);
 
-            // 同会话未命中时兜底做通用召回，避免彻底无记忆上下文。
+            // 已移除全局降级召回，防止跨会话记忆污染（其他用户的记忆被注入当前会话）。
             if (memories.isEmpty()) {
-                memories = longTermMemoryManager.retrieveRelevantMemories(question, topK);
+                log.debug("No session-specific memories found for session: {}", sessionId);
             }
             if (memories.isEmpty()) {
                 return CompletableFuture.completedFuture(Collections.emptyMap());

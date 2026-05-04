@@ -37,6 +37,7 @@ public class MilvusConstants {
     public static final String MEMORY_CONTENT_FIELD = "content";
     public static final String MEMORY_METADATA_FIELD = "metadata";
     public static final String MEMORY_TIMESTAMP_FIELD = "timestamp";
+    public static final String MEMORY_SESSION_ID_FIELD = "session_id";
     
     private MilvusConstants() {
         // 工具类，禁止实例化

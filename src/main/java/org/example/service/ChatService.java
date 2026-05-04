@@ -178,9 +178,23 @@ public class ChatService {
     }
 
     /**
-     * 构建系统提示词（包含历史消息）
+     * 构建系统提示词（仅系统指令，不含历史消息）。
+     * 当记忆 Hooks 启用时使用此方法，历史对话由 MemoryRecallHook 管理，
+     * 避免系统提示词中的历史与 Hook 召回的长期记忆上下文产生冗余。
+     */
+    public String buildSystemPrompt() {
+        return buildSystemPromptInternal(null);
+    }
+
+    /**
+     * 构建系统提示词（包含历史消息）。
+     * 当记忆 Hooks 关闭时使用此方法，历史对话需要嵌入系统提示词中。
      */
     public String buildSystemPrompt(List<Map<String, String>> history) {
+        return buildSystemPromptInternal(history);
+    }
+
+    private String buildSystemPromptInternal(List<Map<String, String>> history) {
         StringBuilder systemPromptBuilder = new StringBuilder();
 
         systemPromptBuilder.append("【严格规则】\n");
@@ -198,7 +212,7 @@ public class ChatService {
         systemPromptBuilder.append("- 当用户需要查询系统监控数据或告警信息时，使用 QueryMetric 工具或腾讯云 MCP 工具。\n");
         systemPromptBuilder.append("- 优先使用本地文档知识库（queryInternalDocs）回答与公司内部流程、最佳实践相关的问题。\n\n");
 
-        if (!history.isEmpty()) {
+        if (history != null && !history.isEmpty()) {
             systemPromptBuilder.append("--- 对话历史 ---\n");
             for (Map<String, String> msg : history) {
                 String role = msg.get("role");

@@ -95,8 +95,11 @@ public class ChatController {
 
             logger.info("开始 ReactAgent 对话（支持自动工具调用）");
 
-            // 构建系统提示词（包含历史消息）
-            String systemPrompt = chatService.buildSystemPrompt(history);
+            // 构建系统提示词：Hooks 启用时不嵌入历史（由 MemoryRecallHook 管理），
+            // Hooks 关闭时嵌入历史（无 Hook 注入，需要手动提供上下文）
+            String systemPrompt = memoryHooksEnabled
+                    ? chatService.buildSystemPrompt()
+                    : chatService.buildSystemPrompt(history);
 
             // 创建 ReactAgent
             ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
@@ -192,8 +195,11 @@ public class ChatController {
 
                 logger.info("开始 ReactAgent 流式对话（支持自动工具调用）");
 
-                // 构建系统提示词（包含历史消息）
-                String systemPrompt = chatService.buildSystemPrompt(history);
+                // 构建系统提示词：Hooks 启用时不嵌入历史（由 MemoryRecallHook 管理），
+                // Hooks 关闭时嵌入历史（无 Hook 注入，需要手动提供上下文）
+                String systemPrompt = memoryHooksEnabled
+                        ? chatService.buildSystemPrompt()
+                        : chatService.buildSystemPrompt(history);
 
                 // 创建 ReactAgent
                 ReactAgent agent = chatService.createReactAgent(chatModel, systemPrompt);
