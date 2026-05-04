@@ -40,6 +40,9 @@ public class AiOpsService {
     @Autowired(required = false)
     private QueryLogsTools queryLogsTools;
 
+    @Autowired(required = false)
+    private KnowledgeMaintenanceService knowledgeMaintenanceService;
+
     /**
      * 执行 AI Ops 告警分析流程
      *
@@ -85,6 +88,27 @@ public class AiOpsService {
         } else {
             logger.warn("未能提取到 Planner 最终报告");
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 触发知识库自维护：将 AIOps 报告提交给知识库维护系统
+     * 自动提取故障信息、分类、生成文档、入库
+     */
+    public void triggerKnowledgeMaintenance(String reportContent) {
+        if (knowledgeMaintenanceService == null) {
+            logger.debug("KnowledgeMaintenanceService 未启用，跳过知识库自维护");
+            return;
+        }
+        if (reportContent == null || reportContent.isBlank()) {
+            logger.warn("报告内容为空，跳过知识库自维护");
+            return;
+        }
+        try {
+            String taskId = knowledgeMaintenanceService.submitReport(reportContent);
+            logger.info("知识库自维护任务已提交: taskId={}", taskId);
+        } catch (Exception e) {
+            logger.error("触发知识库自维护失败", e);
         }
     }
 

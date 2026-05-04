@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - 智能OnCall助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .back-btn { background: #2a2a2a; border: 1px solid #3a3a3a; color: #e0e0e0; padding: 8px 16px; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 14px; }
+        .back-btn:hover { background: #3a3a3a; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; }
+        .stat-card .label { font-size: 13px; color: #888; margin-bottom: 8px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; color: #fff; }
+        .stat-card .sub { font-size: 12px; color: #666; margin-top: 4px; }
+        .section { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+        .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .section-title .badge { background: #3a3a3a; color: #aaa; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #2a2a2a; font-size: 14px; }
+        th { color: #888; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        tr:hover { background: #222; }
+        .status { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .status-PENDING { background: #2a2a0a; color: #f0c000; }
+        .status-EXTRACTING, .status-CLASSIFYING, .status-GENERATING, .status-INDEXING { background: #0a2a2a; color: #00c0f0; }
+        .status-PENDING_REVIEW { background: #2a1a0a; color: #f08000; }
+        .status-COMPLETED, .status-APPROVED { background: #0a2a0a; color: #00c060; }
+        .status-FAILED, .status-REJECTED { background: #2a0a0a; color: #f04040; }
+        .status-SKIPPED { background: #1a1a1a; color: #888; }
+        .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .btn-approve { background: #1a6a2a; color: #fff; }
+        .btn-approve:hover { background: #1a8a3a; }
+        .btn-reject { background: #6a1a1a; color: #fff; }
+        .btn-reject:hover { background: #8a1a1a; }
+        .btn-view { background: #2a2a2a; color: #e0e0e0; border: 1px solid #3a3a3a; }
+        .btn-view:hover { background: #3a3a3a; }
+        .btn-trigger { background: #1a4a8a; color: #fff; padding: 10px 20px; font-size: 14px; }
+        .btn-trigger:hover { background: #1a5a9a; }
+        .empty { text-align: center; color: #666; padding: 40px; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal h3 { margin-bottom: 16px; }
+        .modal-content { background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+        .feedback-input { width: 100%; background: #0f0f0f; border: 1px solid #3a3a3a; color: #e0e0e0; padding: 10px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
+        .trigger-form { display: flex; gap: 12px; margin-bottom: 24px; }
+        .trigger-form textarea { flex: 1; background: #0f0f0f; border: 1px solid #3a3a3a; color: #e0e0e0; padding: 12px; border-radius: 8px; font-size: 14px; resize: vertical; min-height: 80px; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+        .tab { padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; background: transparent; color: #888; border: none; }
+        .tab.active { background: #2a2a2a; color: #fff; }
+        .tab:hover { color: #ccc; }
+        .doc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        .doc-card { background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; }
+        .doc-card .name { font-weight: 600; margin-bottom: 4px; }
+        .doc-card .info { font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>知识库管理</h1>
+            <a href="/" class="back-btn">返回对话</a>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><div class="label">文档总数</div><div class="value" id="statTotal">-</div><div class="sub">知识库中的文档</div></div>
+            <div class="stat-card"><div class="label">任务总数</div><div class="value" id="statTasks">-</div><div class="sub">维护任务</div></div>
+            <div class="stat-card"><div class="label">已完成</div><div class="value" id="statCompleted">-</div><div class="sub">成功入库</div></div>
+            <div class="stat-card"><div class="label">待审核</div><div class="value" id="statReview">-</div><div class="sub">等待人工审核</div></div>
+        </div>
+
+        <!-- 手动触发 -->
+        <div class="section">
+            <div class="section-title">手动触发知识库维护</div>
+            <div class="trigger-form">
+                <textarea id="reportInput" placeholder="粘贴 AIOps 报告内容..."></textarea>
+                <button class="btn btn-trigger" onclick="triggerMaintenance()">提交</button>
+            </div>
+        </div>
+
+        <!-- 标签页 -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('tasks')">任务列表</button>
+            <button class="tab" onclick="switchTab('review')">待审核</button>
+            <button class="tab" onclick="switchTab('docs')">文档列表</button>
+        </div>
+
+        <!-- 任务列表 -->
+        <div class="section" id="tasksSection">
+            <div class="section-title">任务列表 <span class="badge" id="taskCount">0</span></div>
+            <table>
+                <thead><tr><th>任务ID</th><th>状态</th><th>当前Agent</th><th>创建时间</th><th>操作</th></tr></thead>
+                <tbody id="tasksBody"></tbody>
+            </table>
+            <div class="empty" id="tasksEmpty" style="display:none">暂无任务</div>
+        </div>
+
+        <!-- 待审核 -->
+        <div class="section" id="reviewSection" style="display:none">
+            <div class="section-title">待审核任务 <span class="badge" id="reviewCount">0</span></div>
+            <table>
+                <thead><tr><th>任务ID</th><th>文件名</th><th>创建时间</th><th>操作</th></tr></thead>
+                <tbody id="reviewBody"></tbody>
+            </table>
+            <div class="empty" id="reviewEmpty" style="display:none">暂无待审核任务</div>
+        </div>
+
+        <!-- 文档列表 -->
+        <div class="section" id="docsSection" style="display:none">
+            <div class="section-title">知识库文档 <span class="badge" id="docCount">0</span></div>
+            <div class="doc-list" id="docsList"></div>
+            <div class="empty" id="docsEmpty" style="display:none">暂无文档</div>
+        </div>
+    </div>
+
+    <!-- 审核弹窗 -->
+    <div class="modal-overlay" id="reviewModal">
+        <div class="modal">
+            <h3>审核文档</h3>
+            <div class="modal-content" id="reviewContent"></div>
+            <input class="feedback-input" id="reviewFeedback" placeholder="审核反馈（可选）">
+            <div class="modal-actions">
+                <button class="btn btn-reject" onclick="doReview('reject')">拒绝</button>
+                <button class="btn btn-approve" onclick="doReview('approve')">批准</button>
+                <button class="btn btn-view" onclick="closeModal()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/knowledge';
+        let currentReviewTaskId = null;
+
+        async function loadStats() {
+            try {
+                const r = await fetch(API + '/stats');
+                const d = await r.json();
+                document.getElementById('statTotal').textContent = d.documents?.total ?? '-';
+                document.getElementById('statTasks').textContent = d.tasks?.total ?? '-';
+                document.getElementById('statCompleted').textContent = d.tasks?.completed ?? '-';
+                document.getElementById('statReview').textContent = d.tasks?.pendingReview ?? '-';
+            } catch (e) { console.error('加载统计失败', e); }
+        }
+
+        async function loadTasks() {
+            try {
+                const r = await fetch(API + '/tasks');
+                const d = await r.json();
+                const body = document.getElementById('tasksBody');
+                const empty = document.getElementById('tasksEmpty');
+                document.getElementById('taskCount').textContent = d.length;
+                if (d.length === 0) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+                empty.style.display = 'none';
+                body.innerHTML = d.map(t => `<tr>
+                    <td style="font-family:monospace;font-size:12px">${t.taskId.substring(0,8)}...</td>
+                    <td><span class="status status-${t.status}">${t.status}</span></td>
+                    <td>${t.currentAgent || '-'}</td>
+                    <td>${t.createdAt ? new Date(t.createdAt).toLocaleString() : '-'}</td>
+                    <td>${t.status === 'PENDING_REVIEW' ? `<button class="btn btn-view" onclick="openReview('${t.taskId}')">审核</button>` : ''}</td>
+                </tr>`).join('');
+            } catch (e) { console.error('加载任务失败', e); }
+        }
+
+        async function loadReview() {
+            try {
+                const r = await fetch(API + '/pending-review');
+                const d = await r.json();
+                const body = document.getElementById('reviewBody');
+                const empty = document.getElementById('reviewEmpty');
+                document.getElementById('reviewCount').textContent = d.length;
+                if (d.length === 0) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+                empty.style.display = 'none';
+                body.innerHTML = d.map(t => `<tr>
+                    <td style="font-family:monospace;font-size:12px">${t.taskId.substring(0,8)}...</td>
+                    <td>${t.generatedFilename || '-'}</td>
+                    <td>${t.createdAt ? new Date(t.createdAt).toLocaleString() : '-'}</td>
+                    <td><button class="btn btn-view" onclick="openReview('${t.taskId}')">查看并审核</button></td>
+                </tr>`).join('');
+            } catch (e) { console.error('加载待审核失败', e); }
+        }
+
+        async function loadDocs() {
+            try {
+                const r = await fetch(API + '/documents');
+                const d = await r.json();
+                const list = document.getElementById('docsList');
+                const empty = document.getElementById('docsEmpty');
+                document.getElementById('docCount').textContent = d.length;
+                if (d.length === 0) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+                empty.style.display = 'none';
+                list.innerHTML = d.map(doc => `<div class="doc-card">
+                    <div class="name">${doc.title}</div>
+                    <div class="info">${doc.filename} &middot; ${Math.round(parseInt(doc.size)/1024)}KB</div>
+                </div>`).join('');
+            } catch (e) { console.error('加载文档失败', e); }
+        }
+
+        async function openReview(taskId) {
+            currentReviewTaskId = taskId;
+            try {
+                const r = await fetch(API + '/task/' + taskId);
+                const t = await r.json();
+                document.getElementById('reviewContent').textContent = t.generatedContentPreview || '(无内容预览)';
+                document.getElementById('reviewFeedback').value = '';
+                document.getElementById('reviewModal').classList.add('active');
+            } catch (e) { alert('加载任务详情失败'); }
+        }
+
+        function closeModal() {
+            document.getElementById('reviewModal').classList.remove('active');
+            currentReviewTaskId = null;
+        }
+
+        async function doReview(action) {
+            if (!currentReviewTaskId) return;
+            const feedback = document.getElementById('reviewFeedback').value;
+            try {
+                await fetch(API + '/review/' + currentReviewTaskId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, feedback })
+                });
+                closeModal();
+                loadAll();
+            } catch (e) { alert('审核失败'); }
+        }
+
+        async function triggerMaintenance() {
+            const content = document.getElementById('reportInput').value.trim();
+            if (!content) { alert('请输入报告内容'); return; }
+            try {
+                const r = await fetch(API + '/maintain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reportContent: content })
+                });
+                const d = await r.json();
+                document.getElementById('reportInput').value = '';
+                alert('任务已提交: ' + d.taskId);
+                loadAll();
+            } catch (e) { alert('提交失败'); }
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tasksSection').style.display = tab === 'tasks' ? 'block' : 'none';
+            document.getElementById('reviewSection').style.display = tab === 'review' ? 'block' : 'none';
+            document.getElementById('docsSection').style.display = tab === 'docs' ? 'block' : 'none';
+            event.target.classList.add('active');
+        }
+
+        function loadAll() { loadStats(); loadTasks(); loadReview(); loadDocs(); }
+
+        loadAll();
+        setInterval(loadAll, 10000); // 每 10 秒刷新
+    </script>
+</body>
+</html>
