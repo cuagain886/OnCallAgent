@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 智能OnCall助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .login-container { width: 400px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 16px; padding: 40px; }
+        .login-header { text-align: center; margin-bottom: 32px; }
+        .login-header h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        .login-header p { color: #888; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 13px; color: #aaa; margin-bottom: 8px; }
+        .form-group input { width: 100%; background: #0f0f0f; border: 1px solid #3a3a3a; color: #e0e0e0; padding: 12px 16px; border-radius: 10px; font-size: 15px; outline: none; transition: border-color 0.2s; }
+        .form-group input:focus { border-color: #4a9eff; }
+        .form-group input::placeholder { color: #555; }
+        .login-btn { width: 100%; background: #4a9eff; color: #fff; border: none; padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .login-btn:hover { background: #3a8eef; }
+        .login-btn:disabled { background: #2a4a6a; cursor: not-allowed; }
+        .error-msg { background: #2a0a0a; border: 1px solid #4a1a1a; color: #f06060; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: none; }
+        .register-link { text-align: center; margin-top: 20px; font-size: 14px; color: #888; }
+        .register-link a { color: #4a9eff; text-decoration: none; cursor: pointer; }
+        .register-link a:hover { text-decoration: underline; }
+        /* 注册弹窗 */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #1a1a1a; border: 1px solid #3a3a3a; border-radius: 16px; padding: 32px; width: 400px; }
+        .modal h2 { margin-bottom: 24px; font-size: 20px; }
+        .modal .form-group { margin-bottom: 16px; }
+        .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+        .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: #4a9eff; color: #fff; }
+        .btn-secondary { background: #2a2a2a; color: #e0e0e0; border: 1px solid #3a3a3a !important; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>智能OnCall助手</h1>
+            <p>登录以继续使用</p>
+        </div>
+
+        <div class="error-msg" id="errorMsg"></div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="username" placeholder="请输入用户名" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">登录</button>
+        </form>
+
+        <div class="register-link">
+            没有账号？<a onclick="openRegister()">注册新账号</a>
+        </div>
+    </div>
+
+    <!-- 注册弹窗 -->
+    <div class="modal-overlay" id="registerModal">
+        <div class="modal">
+            <h2>注册新账号</h2>
+            <div class="error-msg" id="registerError"></div>
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="regUsername" placeholder="3~32 字符" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>显示名称</label>
+                <input type="text" id="regDisplayName" placeholder="可选，默认为用户名">
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="regPassword" placeholder="至少 6 字符" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label>确认密码</label>
+                <input type="password" id="regPasswordConfirm" placeholder="再次输入密码">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeRegister()">取消</button>
+                <button class="btn-primary" onclick="handleRegister()">注册</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 如果已登录，跳转到主页
+        if (localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        const API = '/api/auth';
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('loginBtn');
+            const errorEl = document.getElementById('errorMsg');
+
+            if (!username || !password) { showError(errorEl, '请输入用户名和密码'); return; }
+
+            btn.disabled = true;
+            btn.textContent = '登录中...';
+            errorEl.style.display = 'none';
+
+            try {
+                const r = await fetch(API + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await r.json();
+
+                if (r.ok && data.token) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('username', data.username);
+                    localStorage.setItem('role', data.role);
+                    localStorage.setItem('displayName', data.displayName || data.username);
+                    window.location.href = '/';
+                } else {
+                    showError(errorEl, data.error || '登录失败');
+                }
+            } catch (err) {
+                showError(errorEl, '网络错误，请稍后重试');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '登录';
+            }
+        }
+
+        function openRegister() {
+            document.getElementById('registerModal').classList.add('active');
+            document.getElementById('registerError').style.display = 'none';
+        }
+        function closeRegister() {
+            document.getElementById('registerModal').classList.remove('active');
+        }
+
+        async function handleRegister() {
+            const username = document.getElementById('regUsername').value.trim();
+            const displayName = document.getElementById('regDisplayName').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const confirm = document.getElementById('regPasswordConfirm').value;
+            const errorEl = document.getElementById('registerError');
+
+            if (!username || !password) { showError(errorEl, '请输入用户名和密码'); return; }
+            if (password !== confirm) { showError(errorEl, '两次密码不一致'); return; }
+            if (password.length < 6) { showError(errorEl, '密码长度至少 6 字符'); return; }
+
+            try {
+                const r = await fetch(API + '/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, displayName: displayName || username })
+                });
+                const data = await r.json();
+
+                if (r.ok) {
+                    closeRegister();
+                    alert('注册成功，请登录');
+                    document.getElementById('username').value = username;
+                    document.getElementById('password').focus();
+                } else {
+                    showError(errorEl, data.error || '注册失败');
+                }
+            } catch (err) {
+                showError(errorEl, '网络错误，请稍后重试');
+            }
+        }
+
+        function showError(el, msg) {
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

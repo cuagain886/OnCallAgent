@@ -1,8 +1,9 @@
 // SuperBizAgent 前端应用
 class SuperBizAgentApp {
     constructor() {
-        this.apiBaseUrl = 'http://localhost:9900/api';
+        this.apiBaseUrl = '/api';
         this.currentMode = 'quick'; // 'quick' 或 'stream'
+        this.token = localStorage.getItem('token');
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
         this.currentChatHistory = []; // 当前对话的消息历史
@@ -56,6 +57,29 @@ class SuperBizAgentApp {
             }
         };
         checkMarked();
+    }
+
+    // 带认证的 fetch 封装
+    async authFetch(url, options = {}) {
+        const headers = { ...options.headers, 'Authorization': 'Bearer ' + this.token };
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('role');
+            window.location.href = '/login.html';
+            throw new Error('认证已过期，请重新登录');
+        }
+        return response;
+    }
+
+    // 退出登录
+    logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+        localStorage.removeItem('role');
+        localStorage.removeItem('displayName');
+        window.location.href = '/login.html';
     }
 
     // 安全地渲染 Markdown
@@ -353,21 +377,27 @@ class SuperBizAgentApp {
         this.saveChatHistories();
     }
     
+    // 获取用户专属的 localStorage key
+    getHistoryKey() {
+        const username = localStorage.getItem('username') || 'anonymous';
+        return 'chatHistories:' + username;
+    }
+
     // 加载历史对话列表
     loadChatHistories() {
         try {
-            const stored = localStorage.getItem('chatHistories');
+            const stored = localStorage.getItem(this.getHistoryKey());
             return stored ? JSON.parse(stored) : [];
         } catch (e) {
             console.error('加载历史对话失败:', e);
             return [];
         }
     }
-    
+
     // 保存历史对话列表到localStorage
     saveChatHistories() {
         try {
-            localStorage.setItem('chatHistories', JSON.stringify(this.chatHistories));
+            localStorage.setItem(this.getHistoryKey(), JSON.stringify(this.chatHistories));
         } catch (e) {
             console.error('保存历史对话失败:', e);
         }
@@ -590,12 +620,6 @@ class SuperBizAgentApp {
         } finally {
             this.isStreaming = false;
             this.updateUI();
-            
-            // 如果当前对话是从历史记录加载的，更新历史记录
-            if (this.isCurrentChatFromHistory && this.currentChatHistory.length > 0) {
-                this.updateCurrentChatHistory();
-                this.renderChatHistory(); // 更新历史对话列表显示
-            }
         }
     }
 
@@ -605,7 +629,7 @@ class SuperBizAgentApp {
         const loadingMessage = this.addLoadingMessage('正在思考...');
         
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -632,7 +656,7 @@ class SuperBizAgentApp {
             if (data.code === 200 || data.message === 'success') {
                 // data.data 是 ChatResponse 对象
                 const chatResponse = data.data;
-                
+
                 if (chatResponse && chatResponse.success) {
                     // 成功：添加实际响应消息（即使 answer 为空也显示）
                     const answer = chatResponse.answer || '（无回复内容）';
@@ -645,6 +669,14 @@ class SuperBizAgentApp {
                     const fallbackAnswer = chatResponse?.answer || chatResponse?.errorMessage || '服务返回了空内容';
                     this.addMessage('assistant', fallbackAnswer);
                 }
+
+                // 保存对话到 localStorage
+                if (this.isCurrentChatFromHistory) {
+                    this.updateCurrentChatHistory();
+                } else {
+                    this.saveCurrentChat();
+                }
+                this.renderChatHistory();
             } else {
                 // HTTP 成功但业务失败
                 throw new Error(data.message || '请求失败');
@@ -661,7 +693,7 @@ class SuperBizAgentApp {
     // 发送流式消息
     async sendStreamMessage(message) {
         try {
-            const response = await fetch(`${this.apiBaseUrl}/chat_stream`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/chat_stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -960,11 +992,13 @@ class SuperBizAgentApp {
                 content: fullResponse,
                 timestamp: new Date().toISOString()
             });
-            // 如果当前对话是从历史记录加载的，更新历史记录
+            // 保存到 localStorage
             if (this.isCurrentChatFromHistory) {
                 this.updateCurrentChatHistory();
-                this.renderChatHistory();
+            } else {
+                this.saveCurrentChat();
             }
+            this.renderChatHistory();
         }
     }
 
@@ -1057,7 +1091,7 @@ class SuperBizAgentApp {
             formData.append('file', file);
 
             // 发送上传请求
-            const response = await fetch(`${this.apiBaseUrl}/upload`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -1102,7 +1136,7 @@ class SuperBizAgentApp {
     // 发送智能运维请求（SSE 流式模式）
     async sendAIOpsRequest(loadingMessageElement) {
         try {
-            const response = await fetch(`${this.apiBaseUrl}/ai_ops`, {
+            const response = await this.authFetch(`${this.apiBaseUrl}/ai_ops`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1459,6 +1493,12 @@ class SuperBizAgentApp {
 
         try {
             await this.sendAIOpsRequest(loadingMessage);
+
+            // 保存 AIOps 对话到历史记录
+            if (this.currentChatHistory.length > 0) {
+                this.saveCurrentChat();
+                this.renderChatHistory();
+            }
         } catch (error) {
             console.error('智能运维分析失败:', error);
             // 更新消息为错误信息
@@ -1544,6 +1584,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // 初始化应用
+let app;
 document.addEventListener('DOMContentLoaded', () => {
-    new SuperBizAgentApp();
+    app = new SuperBizAgentApp();
 });

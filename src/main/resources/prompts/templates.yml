@@ -1,0 +1,108 @@
+# Prompt 模板配置文件
+# 支持变量替换 {{variable}}、条件渲染 {{#if condition}}...{{/if}}、循环渲染 {{#each items}}...{{/each}}
+
+templates:
+  # AIOps 故障分析模板
+  aiops_analysis:
+    version: "2.1"
+    description: "AIOps 故障分析提示词"
+    variables:
+      - name: user_role
+        type: string
+        required: false
+        default: "default"
+      - name: knowledge_results
+        type: list
+        required: false
+      - name: similar_incidents
+        type: list
+        required: false
+    template: |
+      你是一个专业的智能运维专家。
+
+      {{#if user_role == "senior"}}
+      请提供深入的技术分析，包括根因分析和预防措施。
+      {{else}}
+      请提供清晰易懂的故障说明和解决步骤。
+      {{/if}}
+
+      {{#if knowledge_results}}
+      ## 相关知识
+      {{#each knowledge_results}}
+      - {{this.title}}: {{this.summary}}
+      {{/each}}
+      {{/if}}
+
+      {{#if similar_incidents}}
+      ## 历史经验
+      {{#each similar_incidents}}
+      - {{this.date}}: {{this.description}} (解决: {{this.resolution}})
+      {{/each}}
+      {{/if}}
+
+  # 默认对话模板
+  chat_default:
+    version: "1.0"
+    description: "默认对话提示词"
+    template: |
+      你是 SuperBizAgent 智能助手，专注于 AIOps 领域。
+
+      请用专业、简洁的语言回答用户问题。
+
+  # RAG 增强模板
+  rag_enhanced:
+    version: "1.0"
+    description: "RAG 增强提示词"
+    variables:
+      - name: rag_context
+        type: string
+        required: true
+      - name: user_query
+        type: string
+        required: true
+    template: |
+      【参考资料】
+      {{rag_context}}
+
+      【要求】
+      - 基于参考资料概括回答，提炼与问题直接相关的关键信息
+      - 回答控制在 200 字以内，只保留核心要点
+      - 直接给出答案，不要复述问题、不要展开排查步骤、不要添加客套话
+      - 若信息不足，明确说根据现有资料无法确定
+
+      【用户问题】{{user_query}}
+
+  # 代码审查模板
+  code_review:
+    version: "1.0"
+    description: "代码审查提示词"
+    variables:
+      - name: code
+        type: string
+        required: true
+      - name: language
+        type: string
+        required: false
+        default: "java"
+      - name: focus
+        type: string
+        required: false
+        default: "all"
+    template: |
+      请审查以下 {{language}} 代码：
+
+      ```{{language}}
+      {{code}}
+      ```
+
+      {{#if focus == "security"}}
+      请重点关注安全问题。
+      {{else}}
+      {{#if focus == "performance"}}
+      请重点关注性能问题。
+      {{else}}
+      请全面审查代码质量、安全性、性能和可维护性。
+      {{/if}}
+      {{/if}}
+
+      请提供具体的改进建议。

@@ -34,6 +34,13 @@
                     </svg>
                     <span>知识库管理</span>
                 </a>
+
+                <div style="margin-top:auto;padding:12px;border-top:1px solid #2a2a2a;position:absolute;bottom:0;left:0;right:0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <span id="userInfo" style="font-size:13px;color:#aaa;"></span>
+                        <button onclick="doLogout()" style="background:transparent;border:1px solid #3a3a3a;color:#888;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;">退出</button>
+                    </div>
+                </div>
                 
                 <div class="chat-history-section">
                     <div class="history-header">
@@ -135,6 +142,28 @@
         </div>
     </div>
 
+    <script>
+        // 退出登录（独立于 app.js，确保始终可用）
+        function doLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('role');
+            localStorage.removeItem('displayName');
+            window.location.href = '/login.html';
+        }
+
+        // 认证检查（独立于 app.js）
+        (function() {
+            if (!localStorage.getItem('token')) {
+                window.location.href = '/login.html';
+            } else {
+                var el = document.getElementById('userInfo');
+                if (el) {
+                    el.textContent = localStorage.getItem('displayName') || localStorage.getItem('username') || '';
+                }
+            }
+        })();
+    </script>
     <script src="app.js"></script>
 </body>
 </html>

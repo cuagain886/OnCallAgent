@@ -21,6 +21,13 @@ milvus:
 
 # Spring AI OpenAI 配置（DeepSeek 兼容接口）
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+  mvc:
+    async:
+      request-timeout: 30000
   jackson:
     default-property-inclusion: non_null
   ai:
@@ -35,10 +42,10 @@ spring:
           max-tokens: 8192
     
     # Spring AI MCP 客户端配置
-    # 如果使用mock数据，请注释这部分内容
+    # 需要腾讯云 MCP 服务时设为 true，并配置 TENCENT_MCP_SSE_ENDPOINT 环境变量
     mcp:
       client:
-        enabled: true
+        enabled: false
         name: tencent-mcp-server
         version: 1.0.0
         request-timeout: 60s
@@ -48,19 +55,19 @@ spring:
             tencent-cls:
               url: https://mcp-api.tencent-cloud.com
               sse-endpoint: ${TENCENT_MCP_SSE_ENDPOINT}  # 从环境变量读取
-    data:
-      redis:
-        host: localhost
-        port: 6379
-        password:
-        database: 0
-        timeout: 3000
-        lettuce:
-          pool:
-            max-active: 8
-            max-idle: 8
-            min-idle: 0
-            max-wait: -1ms
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
 
 # 阿里云 DashScope Embedding API 配置
 dashscope:
@@ -116,3 +123,57 @@ memory:
     content-max-length: 8192        # 与 Milvus content 字段 max_length 保持一致
   compression:
     threshold: 10                   # 超过多少轮对话后开始压缩
+  markdown:
+    enabled: true                  # 是否启用 Markdown 记忆系统
+    root: "${user.home}/.agent-memory"  # 记忆文件存储根目录
+    recall:
+      enabled: true                # 是否启用记忆召回 Hook
+      max-context-length: 3000     # 召回的最大上下文长度
+    persist:
+      enabled: true                # 是否启用记忆持久化 Hook
+      min-messages: 3              # 触发持久化的最小消息数
+
+# 上下文工程配置
+context:
+  budget:
+    enabled: true                  # 是否启用 Token 预算管理
+    max-tokens: 8000               # 最大上下文 Token 数
+    system-prompt-weight: 0.15     # 系统提示词权重
+    rag-weight: 0.25               # RAG 结果权重
+    memory-weight: 0.15            # 记忆上下文权重
+    conversation-weight: 0.30      # 对话历史权重
+    user-input-weight: 0.15        # 用户输入权重
+  compression:
+    enabled: true                  # 是否启用上下文压缩
+    conversation-summary-threshold: 10  # 对话轮数超过此阈值时生成摘要
+  templates:
+    enabled: true                  # 是否启用 Prompt 模板引擎
+    location: classpath:prompts/templates.yml  # 模板配置文件位置
+  rag:
+    enabled: true                  # 是否启用上下文感知 RAG
+    rewrite:
+      enabled: true                # 是否启用查询改写
+    entity-extraction:
+      enabled: true                # 是否启用实体提取
+  user-profile:
+    enabled: true                  # 是否启用用户画像注入
+    max-length: 500                # 用户画像最大长度
+
+# 限流配置
+rate-limit:
+  enabled: true                      # 是否启用限流
+  per-ip-per-minute: 10              # 单 IP 每分钟最大请求数
+  global-per-second: 5               # 全局每秒最大请求数
+  daily-token-budget: 1000000        # 每日 Token 总预算
+  per-user-daily: 50000              # 单用户每日 Token 限额
+  alert-threshold: 0.8               # Token 消耗告警阈值（80%）
+  auto-ban-threshold: 50             # 自动封禁阈值（5 分钟内调用次数）
+
+# 安全认证
+security:
+  jwt:
+    secret: "${JWT_SECRET:SuperBizAgentDefaultSecretKey2026!PleaseChangeThisInProduction}"
+    expiration: 86400000            # Token 有效期 24 小时（毫秒）
+  admin:
+    username: "${ADMIN_USERNAME:admin}"
+    password: "${ADMIN_PASSWORD:admin123}"

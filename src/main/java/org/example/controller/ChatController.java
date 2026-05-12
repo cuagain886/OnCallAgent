@@ -10,6 +10,8 @@ import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import lombok.Getter;
 import lombok.Setter;
+import org.example.security.InputValidator;
+import org.example.security.PromptSanitizer;
 import org.example.service.AiOpsService;
 import org.example.service.ChatService;
 import org.example.memory.ShortTermMemoryManager;
@@ -47,11 +49,17 @@ public class ChatController {
     @Autowired
     private ChatService chatService;
 
-    @Autowired
+    @Autowired(required = false)
     private ToolCallbackProvider tools;
 
     @Autowired
     private ShortTermMemoryManager shortTermMemoryManager;
+
+    @Autowired
+    private org.example.security.InputValidator inputValidator;
+
+    @Autowired
+    private org.example.security.PromptSanitizer promptSanitizer;
 
     @Value("${memory.hooks.enabled:true}")
     private boolean memoryHooksEnabled;
@@ -67,19 +75,38 @@ public class ChatController {
      * 与 /chat_react 逻辑一致，但直接返回完整结果而非流式输出
      */
     @PostMapping("/chat")
-    public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request) {
+    public ResponseEntity<ApiResponse<ChatResponse>> chat(@RequestBody ChatRequest request,
+                                                           jakarta.servlet.http.HttpServletRequest httpRequest) {
         long startTime = System.currentTimeMillis();
         try {
             logger.info("收到对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
 
-            // 参数校验
-            if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
-                logger.warn("问题内容为空");
-                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error("问题内容不能为空")));
+            // 输入校验
+            InputValidator.ValidationResult questionCheck = inputValidator.validateQuestion(request.getQuestion());
+            if (!questionCheck.valid()) {
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(questionCheck.error())));
+            }
+            InputValidator.ValidationResult sessionCheck = inputValidator.validateSessionId(request.getId());
+            if (!sessionCheck.valid()) {
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error(sessionCheck.error())));
             }
 
+            // Prompt 注入检测
+            PromptSanitizer.InjectionResult injectionResult = promptSanitizer.detect(request.getQuestion());
+            if (injectionResult.isBlocked()) {
+                logger.warn("检测到 Prompt 注入尝试: sessionId={}, reason={}", request.getId(), injectionResult.reason());
+                return ResponseEntity.ok(ApiResponse.success(ChatResponse.error("输入包含不安全内容，请修改后重试")));
+            }
+            if (injectionResult.isSuspicious()) {
+                logger.info("可疑输入: sessionId={}, reason={}", request.getId(), injectionResult.reason());
+            }
+
+            // 获取当前用户
+            String currentUser = (String) httpRequest.getAttribute("currentUser");
+            if (currentUser == null) currentUser = "anonymous";
+
             // 获取或创建会话
-            SessionInfo session = getOrCreateSession(request.getId());
+            SessionInfo session = getOrCreateSession(request.getId(), currentUser);
             String sessionId = session.getSessionId();
 
             // 统一从 ShortTermMemoryManager 获取历史消息
@@ -158,28 +185,44 @@ public class ChatController {
      * 支持 session 管理，保留对话历史
      */
     @PostMapping(value = "/chat_stream", produces = "text/event-stream;charset=UTF-8")
-    public SseEmitter chatStream(@RequestBody ChatRequest request) {
+    public SseEmitter chatStream(@RequestBody ChatRequest request,
+                                  jakarta.servlet.http.HttpServletRequest httpRequest) {
         long startTime = System.currentTimeMillis();
         SseEmitter emitter = new SseEmitter(300000L); // 5分钟超时
 
-        // 参数校验
-        if (request.getQuestion() == null || request.getQuestion().trim().isEmpty()) {
-            logger.warn("问题内容为空");
-            try {
-                emitter.send(SseEmitter.event().name("message").data(SseMessage.error("问题内容不能为空"), MediaType.APPLICATION_JSON));
-                emitter.complete();
-            } catch (IOException e) {
-                emitter.completeWithError(e);
-            }
+        // 输入校验
+        InputValidator.ValidationResult questionCheck = inputValidator.validateQuestion(request.getQuestion());
+        if (!questionCheck.valid()) {
+            sendSseError(emitter, questionCheck.error());
             return emitter;
+        }
+        InputValidator.ValidationResult sessionCheck = inputValidator.validateSessionId(request.getId());
+        if (!sessionCheck.valid()) {
+            sendSseError(emitter, sessionCheck.error());
+            return emitter;
+        }
+
+        // Prompt 注入检测
+        PromptSanitizer.InjectionResult injectionResult = promptSanitizer.detect(request.getQuestion());
+        if (injectionResult.isBlocked()) {
+            logger.warn("检测到 Prompt 注入尝试: sessionId={}, reason={}", request.getId(), injectionResult.reason());
+            sendSseError(emitter, "输入包含不安全内容，请修改后重试");
+            return emitter;
+        }
+        if (injectionResult.isSuspicious()) {
+            logger.info("可疑输入: sessionId={}, reason={}", request.getId(), injectionResult.reason());
         }
 
         executor.execute(() -> {
             try {
                 logger.info("收到 ReactAgent 对话请求 - SessionId: {}, Question: {}", request.getId(), request.getQuestion());
 
+                // 获取当前用户
+                String currentUser = (String) httpRequest.getAttribute("currentUser");
+                if (currentUser == null) currentUser = "anonymous";
+
                 // 获取或创建会话
-                SessionInfo session = getOrCreateSession(request.getId());
+                SessionInfo session = getOrCreateSession(request.getId(), currentUser);
                 String sessionId = session.getSessionId();
 
                 // 统一从 ShortTermMemoryManager 获取历史消息
@@ -329,7 +372,7 @@ public class ChatController {
                 );
                 logger.info("AI Ops 使用模型: {}", chatService.getAiOpsModelName());
 
-                ToolCallback[] toolCallbacks = tools.getToolCallbacks();
+                ToolCallback[] toolCallbacks = tools != null ? tools.getToolCallbacks() : new ToolCallback[0];
 
                 emitter.send(SseEmitter.event().name("message").data(SseMessage.content("正在读取告警并拆解任务...\n")));
 
@@ -376,6 +419,15 @@ public class ChatController {
                             .data(SseMessage.content("\n" + "=".repeat(60) + "\n\n"), MediaType.APPLICATION_JSON));
 
                     logger.info("最终报告已完整输出");
+
+                    // 自动触发知识库自维护
+                    try {
+                        aiOpsService.triggerKnowledgeMaintenance(finalReportText);
+                        emitter.send(SseEmitter.event().name("message")
+                                .data(SseMessage.content("\n> 知识库自维护任务已提交，正在自动沉淀分析结果...\n"), MediaType.APPLICATION_JSON));
+                    } catch (Exception e) {
+                        logger.warn("触发知识库自维护失败: {}", e.getMessage());
+                    }
                 } else {
                     logger.warn("未能提取到 Planner 最终报告");
                     emitter.send(SseEmitter.event().name("message")
@@ -405,6 +457,30 @@ public class ChatController {
 
 
     /**
+     * 获取当前用户的会话列表
+     */
+    @GetMapping("/chat/sessions")
+    public ResponseEntity<List<Map<String, Object>>> getUserSessions(
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        String currentUser = (String) httpRequest.getAttribute("currentUser");
+        if (currentUser == null) currentUser = "anonymous";
+
+        List<Map<String, Object>> userSessions = new ArrayList<>();
+        for (SessionInfo session : sessions.values()) {
+            if (currentUser.equals(session.getUsername())) {
+                Map<String, Object> info = new HashMap<>();
+                info.put("sessionId", session.getSessionId());
+                info.put("createTime", session.getCreateTime());
+                info.put("messagePairCount", shortTermMemoryManager.getHistory(session.getSessionId()).size() / 2);
+                userSessions.add(info);
+            }
+        }
+        // 按创建时间倒序
+        userSessions.sort((a, b) -> Long.compare((long) b.get("createTime"), (long) a.get("createTime")));
+        return ResponseEntity.ok(userSessions);
+    }
+
+    /**
      * 获取会话信息
      */
     @GetMapping("/chat/session/{sessionId}")
@@ -431,11 +507,22 @@ public class ChatController {
 
     // ==================== 辅助方法 ====================
 
-    private SessionInfo getOrCreateSession(String sessionId) {
+    private void sendSseError(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("message")
+                    .data(SseMessage.error(message), MediaType.APPLICATION_JSON));
+            emitter.complete();
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+        }
+    }
+
+    private SessionInfo getOrCreateSession(String sessionId, String username) {
         if (sessionId == null || sessionId.isEmpty()) {
             sessionId = UUID.randomUUID().toString();
         }
-        return sessions.computeIfAbsent(sessionId, SessionInfo::new);
+        final String sid = sessionId;
+        return sessions.computeIfAbsent(sid, id -> new SessionInfo(id, username));
     }
 
     // ==================== 内部类 ====================
@@ -446,15 +533,25 @@ public class ChatController {
      */
     private static class SessionInfo {
         private final String sessionId;
+        private final String username;
         private final long createTime;
 
-        public SessionInfo(String sessionId) {
+        public SessionInfo(String sessionId, String username) {
             this.sessionId = sessionId;
+            this.username = username;
             this.createTime = System.currentTimeMillis();
         }
 
         public String getSessionId() {
             return sessionId;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public long getCreateTime() {
+            return createTime;
         }
     }
 

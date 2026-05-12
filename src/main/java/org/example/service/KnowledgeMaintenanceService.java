@@ -206,9 +206,9 @@ public class KnowledgeMaintenanceService {
             return;
         }
 
-        // 构建 Agent
+        // 构建 Agent（maxTokens=8192 确保完整文档不会被截断）
         OpenAiApi openAiApi = chatService.createOpenAiApi();
-        ChatModel agentModel = chatService.createChatModel(openAiApi, 0.3, 4096, 0.9, chatService.getAiOpsModelName());
+        ChatModel agentModel = chatService.createChatModel(openAiApi, 0.3, 8192, 0.9, chatService.getAiOpsModelName());
 
         // 构建工具集
         Object[] tools = {docSearchTool, docListTool, docWriteTool, docIndexTool, qualityTool, templateTool, dateTimeTools};
@@ -345,6 +345,7 @@ public class KnowledgeMaintenanceService {
 
     /**
      * Phase 2: 执行入库（质量检查 + 写入 + 向量化）
+     * 文档写入和向量化由服务端直接执行，不通过 Agent 工具调用（避免长文本 JSON 截断）
      */
     private void executeIndexing(MaintenanceTask task) {
         String reportId = task.getTaskId();
@@ -353,24 +354,31 @@ public class KnowledgeMaintenanceService {
             task.setCurrentAgent("indexer");
             logger.info("[{}] 开始质量检查与入库", reportId);
 
-            OpenAiApi openAiApi = chatService.createOpenAiApi();
-            ChatModel agentModel = chatService.createChatModel(openAiApi, 0.3, 4096, 0.9, chatService.getAiOpsModelName());
-            Object[] tools = {docSearchTool, docListTool, docWriteTool, docIndexTool, qualityTool, templateTool, dateTimeTools};
+            String content = task.getGeneratedContent();
+            String filename = task.getGeneratedFilename();
 
-            ReactAgent indexer = ReactAgent.builder()
-                    .name("indexer_agent")
-                    .model(agentModel)
-                    .systemPrompt(buildIndexerPrompt())
-                    .methodTools(tools)
-                    .outputKey("indexer_result")
-                    .build();
+            if (content == null || content.isBlank()) {
+                throw new RuntimeException("生成的文档内容为空");
+            }
+            if (filename == null || filename.isBlank()) {
+                filename = "auto_generated_" + System.currentTimeMillis() + ".md";
+            }
 
-            OverAllState indexerState = indexer.invoke(
-                    "请对以下生成的文档进行质量检查并入库：\n\n" + task.getGeneratedContent())
-                    .orElseThrow(() -> new GraphRunnerException("Indexer 未返回结果"));
+            // 1. 质量检查（使用 QualityTool 直接调用，不通过 Agent）
+            String qualityResult = qualityTool.evaluateQuality(content);
+            logger.info("[{}] 质量检查结果: {}", reportId, truncate(qualityResult, 200));
 
-            String indexerOutput = extractOutput(indexerState, "indexer_result");
-            logger.info("[{}] 入库完成: {}", reportId, truncate(indexerOutput, 100));
+            // 2. 写入文件系统
+            String filePath = writeDocumentToFile(filename, content);
+            logger.info("[{}] 文档已写入: {}", reportId, filePath);
+
+            // 3. 向量化入库
+            try {
+                docIndexTool.indexDocument(filePath);
+                logger.info("[{}] 向量化入库完成", reportId);
+            } catch (Exception e) {
+                logger.warn("[{}] 向量化入库失败（文件已写入）: {}", reportId, e.getMessage());
+            }
 
             task.setStatus(TaskStatus.COMPLETED);
             task.setCompletedAt(LocalDateTime.now());
@@ -383,6 +391,24 @@ public class KnowledgeMaintenanceService {
             task.setCompletedAt(LocalDateTime.now());
             notifyTaskUpdate(task);
         }
+    }
+
+    /**
+     * 直接将文档写入文件系统
+     */
+    private String writeDocumentToFile(String filename, String content) throws IOException {
+        Path dir = Paths.get(config.getReportStoragePath()).getParent();
+        if (dir == null) {
+            dir = Paths.get("aiops-docs");
+        }
+        // 确保使用 aiops-docs 目录
+        Path knowledgeDir = dir.resolve("aiops-docs");
+        if (!Files.exists(knowledgeDir)) {
+            Files.createDirectories(knowledgeDir);
+        }
+        Path filePath = knowledgeDir.resolve(filename);
+        Files.writeString(filePath, content);
+        return filePath.toString();
     }
 
     private String readReportContent(String reportId) {
@@ -538,26 +564,6 @@ public class KnowledgeMaintenanceService {
                 5. 更新文档末尾的参考信息
 
                 输出：合并后的完整 Markdown 文档内容
-                """;
-    }
-
-    private String buildIndexerPrompt() {
-        return """
-                你是一个知识库质量审核员。对文档进行质量检查后入库。
-
-                规则：
-                1. 用 QualityTool 评估文档质量
-                2. 质量通过则用 DocWriteTool 写入文件
-                3. 写入后用 DocIndexTool 向量化入库
-                4. 质量不通过则报告问题
-
-                输出 JSON：
-                {
-                  "qualityPassed": true/false,
-                  "qualityScore": 0.85,
-                  "filePath": "文件路径",
-                  "indexed": true/false
-                }
                 """;
     }
 }

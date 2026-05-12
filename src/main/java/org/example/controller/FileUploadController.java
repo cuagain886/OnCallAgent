@@ -2,6 +2,7 @@ package org.example.controller;
 
 import org.example.config.FileUploadConfig;
 import org.example.dto.FileUploadRes;
+import org.example.security.InputValidator;
 import org.example.service.VectorIndexService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,9 @@ public class FileUploadController {
     @Autowired
     private VectorIndexService vectorIndexService;
 
+    @Autowired
+    private InputValidator inputValidator;
+
     @PostMapping(value = "/api/upload", consumes = "multipart/form-data")
     public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
@@ -38,15 +42,27 @@ public class FileUploadController {
         }
 
         String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || originalFilename.isEmpty()) {
-            return ResponseEntity.badRequest().body("文件名不能为空");
+
+        // 文件名校验（路径穿越、长度、格式）
+        InputValidator.ValidationResult filenameCheck = inputValidator.validateFilename(originalFilename);
+        if (!filenameCheck.valid()) {
+            return ResponseEntity.badRequest().body(filenameCheck.error());
         }
 
-        String fileExtension = getFileExtension(originalFilename);
-        if (!isAllowedExtension(fileExtension)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("不支持的文件格式，仅支持: " + fileUploadConfig.getAllowedExtensions());
+        // 文件大小校验
+        InputValidator.ValidationResult sizeCheck = inputValidator.validateFileSize(file.getSize());
+        if (!sizeCheck.valid()) {
+            return ResponseEntity.badRequest().body(sizeCheck.error());
         }
+
+        // 文件扩展名校验
+        InputValidator.ValidationResult extCheck = inputValidator.validateFileExtension(originalFilename, fileUploadConfig.getAllowedExtensions());
+        if (!extCheck.valid()) {
+            return ResponseEntity.badRequest().body(extCheck.error());
+        }
+
+        // 清理文件名（防止路径穿越）
+        String safeFilename = inputValidator.sanitizeFilename(originalFilename);
 
         try {
             String uploadPath = fileUploadConfig.getPath();
@@ -55,8 +71,8 @@ public class FileUploadController {
                 Files.createDirectories(uploadDir);
             }
 
-            // 使用原始文件名，而不是UUID，以便实现基于文件名的去重
-            Path filePath = uploadDir.resolve(originalFilename).normalize();
+            // 使用清理后的文件名，防止路径穿越
+            Path filePath = uploadDir.resolve(safeFilename).normalize();
             
             // 如果文件已存在，先删除旧文件（实现覆盖更新）
             if (Files.exists(filePath)) {
@@ -80,7 +96,7 @@ public class FileUploadController {
             }
 
             FileUploadRes response = new FileUploadRes(
-                    originalFilename,
+                    safeFilename,
                     filePath.toString(),
                     file.getSize()
             );

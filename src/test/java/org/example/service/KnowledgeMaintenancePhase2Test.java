@@ -106,7 +106,10 @@ class KnowledgeMaintenancePhase2Test {
 
         assertTrue(result, "Review should succeed");
         MaintenanceTask task = service.getTask(taskId);
-        assertEquals(TaskStatus.APPROVED, task.getStatus());
+        // 批准后会异步执行 executeIndexing，状态可能已变为 INDEXING/COMPLETED/FAILED
+        assertTrue(task.getStatus() == TaskStatus.APPROVED || task.getStatus() == TaskStatus.INDEXING
+                || task.getStatus() == TaskStatus.COMPLETED || task.getStatus() == TaskStatus.FAILED,
+                "Approved task should be APPROVED or later, but was: " + task.getStatus());
         assertEquals("文档质量良好", task.getReviewerFeedback());
         assertNotNull(task.getReviewedAt());
     }
@@ -204,7 +207,11 @@ class KnowledgeMaintenancePhase2Test {
         service.reviewTask(taskId1, true, "approved");
         service.reviewTask(taskId2, false, "rejected");
 
-        assertEquals(TaskStatus.APPROVED, service.getTask(taskId1).getStatus());
+        // 批准后会异步执行 executeIndexing，状态可能已变为 INDEXING/COMPLETED/FAILED
+        TaskStatus status1 = service.getTask(taskId1).getStatus();
+        assertTrue(status1 == TaskStatus.APPROVED || status1 == TaskStatus.INDEXING
+                || status1 == TaskStatus.COMPLETED || status1 == TaskStatus.FAILED,
+                "Approved task should be APPROVED or in indexing/completed/failed, but was: " + status1);
         assertEquals(TaskStatus.REJECTED, service.getTask(taskId2).getStatus());
     }
 

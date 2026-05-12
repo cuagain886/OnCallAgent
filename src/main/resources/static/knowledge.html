@@ -64,7 +64,11 @@
     <div class="container">
         <div class="header">
             <h1>知识库管理</h1>
-            <a href="/" class="back-btn">返回对话</a>
+            <div style="display:flex;gap:12px;align-items:center;">
+                <span id="userInfo" style="font-size:13px;color:#888;"></span>
+                <a href="/" class="back-btn">返回对话</a>
+                <button class="back-btn" onclick="doLogout()" style="border-color:#4a1a1a;color:#f06060;">退出</button>
+            </div>
         </div>
 
         <!-- 统计卡片 -->
@@ -136,10 +140,31 @@
     <script>
         const API = '/api/knowledge';
         let currentReviewTaskId = null;
+        const token = localStorage.getItem('token');
+
+        // 认证检查
+        if (!token) { window.location.href = '/login.html'; }
+
+        // 带认证的 fetch
+        async function authFetch(url, options = {}) {
+            const headers = { ...options.headers, 'Authorization': 'Bearer ' + token };
+            const r = await fetch(url, { ...options, headers });
+            if (r.status === 401) { localStorage.clear(); window.location.href = '/login.html'; }
+            return r;
+        }
+
+        // 退出登录
+        function doLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('role');
+            localStorage.removeItem('displayName');
+            window.location.href = '/login.html';
+        }
 
         async function loadStats() {
             try {
-                const r = await fetch(API + '/stats');
+                const r = await authFetch(API + '/stats');
                 const d = await r.json();
                 document.getElementById('statTotal').textContent = d.documents?.total ?? '-';
                 document.getElementById('statTasks').textContent = d.tasks?.total ?? '-';
@@ -150,7 +175,7 @@
 
         async function loadTasks() {
             try {
-                const r = await fetch(API + '/tasks');
+                const r = await authFetch(API + '/tasks');
                 const d = await r.json();
                 const body = document.getElementById('tasksBody');
                 const empty = document.getElementById('tasksEmpty');
@@ -169,7 +194,7 @@
 
         async function loadReview() {
             try {
-                const r = await fetch(API + '/pending-review');
+                const r = await authFetch(API + '/pending-review');
                 const d = await r.json();
                 const body = document.getElementById('reviewBody');
                 const empty = document.getElementById('reviewEmpty');
@@ -187,7 +212,7 @@
 
         async function loadDocs() {
             try {
-                const r = await fetch(API + '/documents');
+                const r = await authFetch(API + '/documents');
                 const d = await r.json();
                 const list = document.getElementById('docsList');
                 const empty = document.getElementById('docsEmpty');
@@ -204,7 +229,7 @@
         async function openReview(taskId) {
             currentReviewTaskId = taskId;
             try {
-                const r = await fetch(API + '/task/' + taskId);
+                const r = await authFetch(API + '/task/' + taskId);
                 const t = await r.json();
                 document.getElementById('reviewContent').textContent = t.generatedContentPreview || '(无内容预览)';
                 document.getElementById('reviewFeedback').value = '';
@@ -221,7 +246,7 @@
             if (!currentReviewTaskId) return;
             const feedback = document.getElementById('reviewFeedback').value;
             try {
-                await fetch(API + '/review/' + currentReviewTaskId, {
+                await authFetch(API + '/review/' + currentReviewTaskId, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action, feedback })
@@ -235,7 +260,7 @@
             const content = document.getElementById('reportInput').value.trim();
             if (!content) { alert('请输入报告内容'); return; }
             try {
-                const r = await fetch(API + '/maintain', {
+                const r = await authFetch(API + '/maintain', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ reportContent: content })
@@ -256,6 +281,10 @@
         }
 
         function loadAll() { loadStats(); loadTasks(); loadReview(); loadDocs(); }
+
+        // 显示用户信息
+        const userInfoEl = document.getElementById('userInfo');
+        if (userInfoEl) { userInfoEl.textContent = localStorage.getItem('displayName') || localStorage.getItem('username') || ''; }
 
         loadAll();
         setInterval(loadAll, 10000); // 每 10 秒刷新
