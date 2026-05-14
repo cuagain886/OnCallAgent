@@ -9,15 +9,19 @@
 ### 1. RAG 智能问答
 集成 Milvus 向量数据库和 DeepSeek 大模型，提供基于检索增强生成的智能问答能力，支持多轮对话和流式输出。
 
-<img width="2382" height="1485" alt="0fd182ebe96dfb3c179bc7bc5a1f5705" src="https://github.com/user-attachments/assets/b0a2dbb5-f8f9-4439-839b-ea2bde1ad31c" />
+<img width="2382" height="1485" alt="image" src="https://github.com/user-attachments/assets/d3ad2b83-03e0-467f-bef0-26d28402d3f8" />
+
 
 ### 2. AIOps 智能运维
 基于 AI Agent 的自动化运维系统，采用 Planner-Executor-Replanner 架构，实现告警分析、日志查询、智能诊断和报告生成。
 
-<img width="2382" height="1485" alt="7c3b37c5681bde19d2f232ce31236f5d" src="https://github.com/user-attachments/assets/9c198a54-d3a0-4a43-8b7b-b2c9fe99314f" />
+<img width="2382" height="1485" alt="image" src="https://github.com/user-attachments/assets/21ad3947-520e-4550-a02c-4d63e5468505" />
+
 
 ### 3. 知识库自维护 Agent
 基于四阶段 Multi-Agent 流水线（Extractor → Classifier → Generator → Indexer），实现 AIOps 故障报告自动沉淀为知识库文档，支持 CREATE/UPDATE 智能分类和 Human-in-the-Loop 审核。
+<img width="2382" height="1485" alt="image" src="https://github.com/user-attachments/assets/2fd32518-6cb2-4ffe-903a-cf56bdc534fc" />
+
 
 ## 核心特性
 
