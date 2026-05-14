@@ -2,6 +2,7 @@ package org.example.context;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +30,8 @@ public class PromptTemplateEngine {
     private static final Logger log = LoggerFactory.getLogger(PromptTemplateEngine.class);
 
     private final Map<String, PromptTemplate> templates = new ConcurrentHashMap<>();
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper jsonMapper;
+    private final ObjectMapper yamlMapper;
 
     @Value("${context.templates.enabled:true}")
     private boolean enabled;
@@ -38,7 +40,8 @@ public class PromptTemplateEngine {
     private String templatesLocation;
 
     public PromptTemplateEngine(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this.jsonMapper = objectMapper;
+        this.yamlMapper = new ObjectMapper(new YAMLFactory());
     }
 
     @PostConstruct
@@ -58,7 +61,10 @@ public class PromptTemplateEngine {
 
             if (resource.exists()) {
                 try (InputStream is = resource.getInputStream()) {
-                    JsonNode root = objectMapper.readTree(is);
+                    String location = templatesLocation.toLowerCase();
+                    ObjectMapper mapper = location.endsWith(".yml") || location.endsWith(".yaml")
+                            ? yamlMapper : jsonMapper;
+                    JsonNode root = mapper.readTree(is);
                     parseTemplates(root);
                     log.info("加载了 {} 个 Prompt 模板", templates.size());
                 }

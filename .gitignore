@@ -78,3 +78,5 @@ manifest/docker/volumes/
 **/LOG
 *.wal
 *.db
+
+CLAUDE.md
